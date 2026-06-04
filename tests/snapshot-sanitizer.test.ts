@@ -62,6 +62,7 @@ describe("sanitizeSnapshotForAgent", () => {
     const sanitized = sanitizeSnapshotForAgent(snapshot, catalog);
 
     expect(sanitized.self.hand[0]?.text).toBe("测试文本");
+    expect(sanitized.self.hand[0]?.cardType).toBe("SPELL");
     expect(sanitized.self.hand[0]?.tags).toEqual({});
     expect(JSON.stringify(sanitized)).not.toContain("不得发送");
     expect(JSON.stringify(sanitized)).not.toContain("玩家名");

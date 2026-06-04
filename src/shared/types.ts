@@ -8,6 +8,7 @@ export interface CardReference {
   cardId?: string;
   name?: string;
   text?: string;
+  cardType?: string;
   zonePosition?: number;
   attack?: number;
   health?: number;

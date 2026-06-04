@@ -68,6 +68,7 @@ function sanitizeCard(card: CardReference, catalog: CardCatalog): CardReference 
     cardId: card.cardId,
     name: catalogEntry?.name ?? card.name,
     text: catalogEntry?.text,
+    cardType: catalogEntry?.cardType ?? card.cardType,
     zonePosition: card.zonePosition,
     attack: card.attack,
     health: card.health,

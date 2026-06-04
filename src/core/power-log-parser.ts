@@ -188,7 +188,10 @@ export class PowerLogParser {
         entityId,
         Number(player.groups.playerId),
       );
-      if (player.groups.hi !== "0" || player.groups.lo !== "0") {
+      if (
+        this.state.selfPlayerId === undefined &&
+        (player.groups.hi !== "0" || player.groups.lo !== "0")
+      ) {
         this.setSelfPlayerId(Number(player.groups.playerId));
       }
       this.state.currentEntityId = entityId;
@@ -468,6 +471,10 @@ export class PowerLogParser {
       entityId: entity.entityId,
       cardId: entity.cardId,
       name: entity.name,
+      cardType:
+        entity.tags.CARDTYPE === undefined
+          ? undefined
+          : String(entity.tags.CARDTYPE),
       zonePosition: entity.zonePosition,
       attack: this.numberTag(entity, "ATK"),
       health: this.numberTag(entity, "HEALTH"),
