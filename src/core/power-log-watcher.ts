@@ -15,6 +15,7 @@ export class PowerLogWatcher extends EventEmitter<PowerLogWatcherEvents> {
   private offset = 0;
   private lastSize = 0;
   private lastModifiedMs = 0;
+  private carry = "";
 
   constructor(
     readonly path: string,
@@ -63,6 +64,7 @@ export class PowerLogWatcher extends EventEmitter<PowerLogWatcherEvents> {
       (this.lastModifiedMs > 0 && fileStats.mtimeMs < this.lastModifiedMs);
     if (rotated) {
       this.offset = 0;
+      this.carry = "";
       this.parser.reset();
     }
 
@@ -76,7 +78,10 @@ export class PowerLogWatcher extends EventEmitter<PowerLogWatcherEvents> {
         await file.close();
       }
       this.offset = fileStats.size;
-      this.parser.consume(buffer.toString("utf8"));
+      const content = this.carry + buffer.toString("utf8");
+      const lines = content.split(/\r?\n/);
+      this.carry = lines.pop() ?? "";
+      this.parser.consume(lines.join("\n"));
       this.emit("change");
     }
 
@@ -90,4 +95,3 @@ export class PowerLogWatcher extends EventEmitter<PowerLogWatcherEvents> {
     });
   }
 }
-

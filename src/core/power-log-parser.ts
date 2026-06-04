@@ -23,6 +23,7 @@ interface EntityState {
 
 interface ParserState {
   entities: Map<number, EntityState>;
+  playerIds: Set<number>;
   selfPlayerId?: number;
   opponentPlayerId?: number;
   turn: number;
@@ -91,7 +92,9 @@ export class PowerLogParser {
     if (show?.groups) {
       const entityId = this.entityIdFromGroups(show.groups);
       if (entityId !== undefined) {
-        this.getEntity(entityId).cardId = show.groups.cardId;
+        const entity = this.getEntity(entityId);
+        entity.cardId = show.groups.cardId;
+        this.inferSidesFromVisibleHand(entity);
         this.bumpRevision();
       }
       return;
@@ -148,10 +151,13 @@ export class PowerLogParser {
       }
 
       if (this.isPlayer(entity)) {
-        player.mana = this.numberTag(entity, "RESOURCES") ?? player.mana;
-        player.maxMana = this.numberTag(entity, "RESOURCES") ?? player.maxMana;
+        const resources = this.numberTag(entity, "RESOURCES") ?? player.maxMana;
+        const resourcesUsed = this.numberTag(entity, "RESOURCES_USED") ?? 0;
+        const overloadLocked = this.numberTag(entity, "OVERLOAD_LOCKED") ?? 0;
+        player.maxMana = resources;
+        player.mana = Math.max(0, resources - resourcesUsed - overloadLocked);
         player.overloadLocked =
-          this.numberTag(entity, "OVERLOAD_LOCKED") ?? player.overloadLocked;
+          overloadLocked;
         player.deckCount = this.numberTag(entity, "DECK_COUNT") ?? player.deckCount;
         player.fatigue = this.numberTag(entity, "FATIGUE") ?? player.fatigue;
       }
@@ -194,19 +200,19 @@ export class PowerLogParser {
       entity.zonePosition = Number(value);
     } else if (tag === "TURN") {
       this.state.turn = Number(value);
-    } else if (tag === "FIRST_PLAYER" && Number(value) === 1) {
-      this.state.selfPlayerId ??= entityId;
     } else if (tag === "PLAYSTATE") {
       this.registerPlayer(entityId);
     } else if (tag === "CURRENT_PLAYER") {
       this.registerPlayer(entityId);
       this.state.activePlayer =
         Number(value) === 1 ? this.sideForPlayerId(entityId) : this.state.activePlayer;
-    } else if (tag === "GAME_MODE") {
+    } else if (tag === "FORMAT_TYPE") {
       this.state.gameMode = String(value).includes("STANDARD")
         ? "standard"
         : "unsupported";
     }
+
+    this.inferSidesFromVisibleHand(entity);
 
     if (isVisibleEventTag(tag)) {
       this.pushHistory({
@@ -223,13 +229,25 @@ export class PowerLogParser {
   }
 
   private registerPlayer(entityId: number): void {
-    if (this.state.selfPlayerId === undefined) {
-      this.state.selfPlayerId = entityId;
-    } else if (
-      this.state.opponentPlayerId === undefined &&
-      this.state.selfPlayerId !== entityId
+    this.state.playerIds.add(entityId);
+    if (this.state.selfPlayerId !== undefined) {
+      this.state.opponentPlayerId = [...this.state.playerIds].find(
+        (id) => id !== this.state.selfPlayerId,
+      );
+    }
+  }
+
+  private inferSidesFromVisibleHand(entity: EntityState): void {
+    if (
+      this.state.selfPlayerId === undefined &&
+      entity.zone === "HAND" &&
+      entity.cardId &&
+      entity.controller !== undefined
     ) {
-      this.state.opponentPlayerId = entityId;
+      this.state.selfPlayerId = entity.controller;
+      this.state.opponentPlayerId = [...this.state.playerIds].find(
+        (id) => id !== entity.controller,
+      );
     }
   }
 
@@ -341,6 +359,7 @@ export class PowerLogParser {
   private newState(): ParserState {
     return {
       entities: new Map(),
+      playerIds: new Set(),
       turn: 0,
       activePlayer: "unknown",
       gameMode: "unknown",
@@ -378,4 +397,3 @@ function isVisibleEventTag(tag: string): boolean {
 function byZonePosition(a: CardReference, b: CardReference): number {
   return (a.zonePosition ?? 0) - (b.zonePosition ?? 0);
 }
-

@@ -7,6 +7,7 @@ export interface CardCatalogEntry {
   cost: number;
   attack?: number;
   health?: number;
+  cardType?: string;
   collectible: boolean;
   standard: boolean;
   imageHash?: string;
@@ -56,4 +57,3 @@ export class CardCatalog {
     return [...this.entries.values()];
   }
 }
-

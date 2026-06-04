@@ -63,8 +63,27 @@ export function validateAnalysisResult(
     if (candidate.confidence < 0 || candidate.confidence > 1) {
       errors.push(`路线 ${candidate.rank} 的置信度必须在 0 到 1 之间。`);
     }
+    let remainingMana = snapshot.self.mana;
+    let boardCount = snapshot.self.board.length;
     for (const action of candidate.actions) {
       validateAction(action, snapshot, catalog, errors, warnings);
+      if (action.type === "play-card" && action.sourceEntityId !== undefined) {
+        const card = snapshot.self.hand.find(
+          (entry) => entry.entityId === action.sourceEntityId,
+        );
+        const catalogEntry = catalog.get(card?.cardId);
+        const cost = card?.cost ?? catalogEntry?.cost ?? 0;
+        remainingMana -= cost;
+        if (remainingMana < 0) {
+          errors.push(`路线 ${candidate.rank} 的基础费用超过当前法力。`);
+        }
+        if (catalogEntry?.cardType === "MINION") {
+          boardCount += 1;
+          if (boardCount > 7) {
+            errors.push(`路线 ${candidate.rank} 会超过随从区容量。`);
+          }
+        }
+      }
     }
   }
 
@@ -119,4 +138,3 @@ function validateAction(
     }
   }
 }
-

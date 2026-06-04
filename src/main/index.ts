@@ -89,7 +89,9 @@ app.on("will-quit", () => {
 
 function createWindows(): void {
   const preload = join(import.meta.dirname, "preload.js");
-  const rendererUrl = process.env.VITE_DEV_SERVER_URL;
+  const rendererUrl =
+    process.env.VITE_DEV_SERVER_URL ??
+    (!app.isPackaged ? "http://localhost:5173" : undefined);
   const rendererFile = join(app.getAppPath(), "dist", "renderer", "index.html");
 
   mainWindow = new BrowserWindow({
@@ -165,6 +167,9 @@ function registerIpc(): void {
 
 function startWatcher(): void {
   watcher?.stop();
+  parser.reset();
+  currentSnapshot = undefined;
+  currentAnalysis = undefined;
   const path = expandEnvironmentVariables(settings.powerLogPath);
   watcher = new PowerLogWatcher(path, parser);
   watcher.on("status", (nextStatus) => {
@@ -319,4 +324,3 @@ function expandEnvironmentVariables(path: string): string {
     return process.env[name] ?? process.env[name.toUpperCase()] ?? `%${name}%`;
   });
 }
-

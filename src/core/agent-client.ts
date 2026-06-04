@@ -37,7 +37,14 @@ const ANALYSIS_RESULT_SCHEMA = {
             items: {
               type: "object",
               additionalProperties: false,
-              required: ["type", "description"],
+              required: [
+                "type",
+                "sourceEntityId",
+                "sourceCardId",
+                "targetEntityId",
+                "targetSide",
+                "description",
+              ],
               properties: {
                 type: {
                   type: "string",
@@ -49,12 +56,12 @@ const ANALYSIS_RESULT_SCHEMA = {
                     "end-turn",
                   ],
                 },
-                sourceEntityId: { type: "integer" },
-                sourceCardId: { type: "string" },
-                targetEntityId: { type: "integer" },
+                sourceEntityId: { type: ["integer", "null"] },
+                sourceCardId: { type: ["string", "null"] },
+                targetEntityId: { type: ["integer", "null"] },
                 targetSide: {
-                  type: "string",
-                  enum: ["self", "opponent"],
+                  type: ["string", "null"],
+                  enum: ["self", "opponent", null],
                 },
                 description: { type: "string" },
               },
@@ -230,7 +237,20 @@ function extractChatCompletionsText(payload: unknown): string {
 
 function parseAnalysisResult(text: string): AnalysisResult {
   try {
-    return JSON.parse(text) as AnalysisResult;
+    const parsed = JSON.parse(text) as AnalysisResult;
+    return {
+      ...parsed,
+      candidates: parsed.candidates.map((candidate) => ({
+        ...candidate,
+        actions: candidate.actions.map((action) => ({
+          ...action,
+          sourceEntityId: action.sourceEntityId ?? undefined,
+          sourceCardId: action.sourceCardId ?? undefined,
+          targetEntityId: action.targetEntityId ?? undefined,
+          targetSide: action.targetSide ?? undefined,
+        })),
+      })),
+    };
   } catch {
     throw new Error("Agent 返回了无效 JSON。");
   }
@@ -239,4 +259,3 @@ function parseAnalysisResult(text: string): AnalysisResult {
 function joinUrl(baseUrl: string, path: string): string {
   return `${baseUrl.replace(/\/+$/, "")}${path}`;
 }
-

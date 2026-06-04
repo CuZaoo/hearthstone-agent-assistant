@@ -1,0 +1,26 @@
+D 12:00:00.001 GameState.DebugPrintPower() - TAG_CHANGE Entity=1 tag=PLAYSTATE value=PLAYING
+D 12:00:00.002 GameState.DebugPrintPower() - TAG_CHANGE Entity=2 tag=PLAYSTATE value=PLAYING
+D 12:00:00.003 GameState.DebugPrintPower() - TAG_CHANGE Entity=1 tag=CARDTYPE value=PLAYER
+D 12:00:00.004 GameState.DebugPrintPower() - TAG_CHANGE Entity=2 tag=CARDTYPE value=PLAYER
+D 12:00:00.005 GameState.DebugPrintPower() - TAG_CHANGE Entity=1 tag=FORMAT_TYPE value=FT_STANDARD
+D 12:00:00.006 GameState.DebugPrintPower() - TAG_CHANGE Entity=1 tag=RESOURCES value=5
+D 12:00:00.007 GameState.DebugPrintPower() - TAG_CHANGE Entity=1 tag=RESOURCES_USED value=2
+D 12:00:00.008 GameState.DebugPrintPower() - TAG_CHANGE Entity=10 tag=CONTROLLER value=1
+D 12:00:00.009 GameState.DebugPrintPower() - TAG_CHANGE Entity=10 tag=ZONE value=HAND
+D 12:00:00.010 GameState.DebugPrintPower() - SHOW_ENTITY - Updating Entity=10 CardID=TEST_CARD_001
+D 12:00:00.011 GameState.DebugPrintPower() - TAG_CHANGE Entity=10 tag=ZONE_POSITION value=1
+D 12:00:00.012 GameState.DebugPrintPower() - TAG_CHANGE Entity=11 tag=CONTROLLER value=1
+D 12:00:00.013 GameState.DebugPrintPower() - TAG_CHANGE Entity=11 tag=ZONE value=PLAY
+D 12:00:00.014 GameState.DebugPrintPower() - SHOW_ENTITY - Updating Entity=11 CardID=TEST_MINION_001
+D 12:00:00.015 GameState.DebugPrintPower() - TAG_CHANGE Entity=11 tag=CARDTYPE value=MINION
+D 12:00:00.016 GameState.DebugPrintPower() - TAG_CHANGE Entity=11 tag=ATK value=3
+D 12:00:00.017 GameState.DebugPrintPower() - TAG_CHANGE Entity=11 tag=HEALTH value=4
+D 12:00:00.018 GameState.DebugPrintPower() - TAG_CHANGE Entity=12 tag=CONTROLLER value=2
+D 12:00:00.019 GameState.DebugPrintPower() - TAG_CHANGE Entity=12 tag=ZONE value=PLAY
+D 12:00:00.020 GameState.DebugPrintPower() - SHOW_ENTITY - Updating Entity=12 CardID=TEST_MINION_002
+D 12:00:00.021 GameState.DebugPrintPower() - TAG_CHANGE Entity=12 tag=CARDTYPE value=MINION
+D 12:00:00.022 GameState.DebugPrintPower() - TAG_CHANGE Entity=12 tag=ATK value=2
+D 12:00:00.023 GameState.DebugPrintPower() - TAG_CHANGE Entity=12 tag=HEALTH value=2
+D 12:00:00.024 GameState.DebugPrintPower() - TAG_CHANGE Entity=1 tag=CURRENT_PLAYER value=1
+D 12:00:00.025 GameState.DebugPrintPower() - TAG_CHANGE Entity=1 tag=TURN value=5
+
