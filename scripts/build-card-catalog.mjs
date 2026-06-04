@@ -34,6 +34,7 @@ const output = {
   version: args.version ?? new Date().toISOString().slice(0, 10),
   generatedAt: new Date().toISOString(),
   locale: "zhCN",
+  gameBuild: args["game-build"] ? Number(args["game-build"]) : undefined,
   entries,
 };
 
@@ -120,4 +121,3 @@ function fail(message) {
   process.exitCode = 1;
   throw new Error(message);
 }
-

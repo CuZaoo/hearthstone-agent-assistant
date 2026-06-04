@@ -90,13 +90,28 @@ export class AgentClient {
     };
 
     let repairErrors: string[] = [];
+    const deadline = Date.now() + this.settings.timeoutMs;
     for (let attempt = 0; attempt < 2; attempt += 1) {
-      const result = await this.requestAnalysis(safeRequest, repairErrors);
+      const remainingMs = deadline - Date.now();
+      if (remainingMs <= 0) {
+        throw new Error(`Agent 分析超过 ${this.settings.timeoutMs}ms 总预算。`);
+      }
+      const result = await this.requestAnalysis(
+        safeRequest,
+        repairErrors,
+        remainingMs,
+      );
       const report = validateAnalysisResult(
         result,
         request.snapshot,
         this.catalog,
       );
+      if (result.candidates.length > request.maxCandidates) {
+        report.ok = false;
+        report.errors.push(
+          `Agent 返回了 ${result.candidates.length} 条路线，超过上限 ${request.maxCandidates}。`,
+        );
+      }
       if (report.ok) {
         return {
           ...result,
@@ -112,9 +127,10 @@ export class AgentClient {
   private async requestAnalysis(
     request: AnalysisRequest,
     repairErrors: string[],
+    timeoutMs: number,
   ): Promise<AnalysisResult> {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), this.settings.timeoutMs);
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
       const endpoint =
         this.settings.transport === "responses"
@@ -144,7 +160,7 @@ export class AgentClient {
       return parseAnalysisResult(text);
     } catch (error) {
       if (error instanceof Error && error.name === "AbortError") {
-        throw new Error(`Agent 请求超过 ${this.settings.timeoutMs}ms。`);
+        throw new Error(`Agent 请求超过 ${timeoutMs}ms。`);
       }
       throw error;
     } finally {

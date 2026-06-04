@@ -59,6 +59,7 @@ node scripts/build-card-catalog.mjs `
   --cards .\local-data\cards.zhCN.json `
   --sets .\local-data\standard-set-ids.json `
   --features .\local-data\image-features.json `
+  --game-build 123456 `
   --version 2026.06.04 `
   --out .\assets\card-catalog.zhCN.json
 
@@ -68,6 +69,7 @@ npm run catalog:validate
 - `cards.zhCN.json` 可以是官方卡牌 API 返回的 `cards` 数组或包含该数组的对象。
 - `standard-set-ids.json` 是标准卡池的 set ID 数组，或包含 `standardSetIds` 数组的对象。
 - `image-features.json` 是 `cardId` 到 16 位十六进制 dHash 的对象。
+- `game-build` 必须与当前 `Power.log` 中的 `BuildNumber` 一致，否则应用会阻止分析。
 - 脚本只读取本地文件，不会下载资源。
 
 如果本机已安装 Hearthstone Deck Tracker，也可以直接从其现有

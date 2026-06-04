@@ -1,4 +1,5 @@
 D 13:00:00.001 GameState.DebugPrintPower() - CREATE_GAME
+D 13:00:00.001 GameState.DebugPrintGame() - BuildNumber=123456
 D 13:00:00.001 GameState.DebugPrintGame() - GameType=GT_RANKED
 D 13:00:00.001 GameState.DebugPrintGame() - FormatType=FT_STANDARD
 D 13:00:00.001 GameState.DebugPrintGame() - PlayerID=1, PlayerName=本机玩家#1234

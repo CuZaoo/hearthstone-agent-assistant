@@ -16,6 +16,14 @@ export function validateSnapshotForAnalysis(
   if (!catalog.isReady()) {
     errors.push("卡牌快照尚未配置，无法生成可靠建议。");
   }
+  const buildMatch = catalog.matchesGameBuild(snapshot.gameBuild);
+  if (buildMatch === false) {
+    errors.push(
+      `卡牌快照 build ${catalog.gameBuild} 与游戏 build ${snapshot.gameBuild} 不一致。`,
+    );
+  } else if (buildMatch === undefined) {
+    warnings.push("无法确认卡牌快照与当前游戏 build 是否一致。");
+  }
   if (snapshot.gameMode !== "standard") {
     errors.push("首版仅支持标准构筑模式。");
   }
@@ -157,6 +165,14 @@ function validateAction(
       ? [{ entityId: snapshot.opponent.hero.entityId }]
       : []),
   ];
+  const selfTargetIds = new Set([
+    ...snapshot.self.board.map((entity) => entity.entityId),
+    ...(snapshot.self.hero.entityId ? [snapshot.self.hero.entityId] : []),
+  ]);
+  const opponentTargetIds = new Set([
+    ...snapshot.opponent.board.map((entity) => entity.entityId),
+    ...(snapshot.opponent.hero.entityId ? [snapshot.opponent.hero.entityId] : []),
+  ]);
 
   if (
     action.sourceEntityId !== undefined &&
@@ -169,6 +185,20 @@ function validateAction(
     !allTargets.some((entity) => entity.entityId === action.targetEntityId)
   ) {
     errors.push(`动作引用了不可见的目标实体 ${action.targetEntityId}。`);
+  }
+  if (
+    action.targetEntityId !== undefined &&
+    action.targetSide === "self" &&
+    !selfTargetIds.has(action.targetEntityId)
+  ) {
+    errors.push(`目标实体 ${action.targetEntityId} 不属于己方。`);
+  }
+  if (
+    action.targetEntityId !== undefined &&
+    action.targetSide === "opponent" &&
+    !opponentTargetIds.has(action.targetEntityId)
+  ) {
+    errors.push(`目标实体 ${action.targetEntityId} 不属于对手。`);
   }
   if (action.sourceCardId && !catalog.has(action.sourceCardId)) {
     errors.push(`动作引用了卡牌快照中不存在的卡牌 ${action.sourceCardId}。`);
@@ -184,6 +214,9 @@ function validateAction(
     }
   }
 
+  if (action.type === "play-card" && action.sourceEntityId === undefined) {
+    errors.push("出牌动作必须引用己方手牌实体。");
+  }
   if (action.type === "play-card" && action.sourceEntityId !== undefined) {
     const card = snapshot.self.hand.find(
       (entry) => entry.entityId === action.sourceEntityId,
@@ -246,6 +279,9 @@ function validateAction(
     if (!card || !(card.tags.TRADEABLE === 1 || card.tags.TRADEABLE === true)) {
       errors.push("交易动作必须引用具有可交易属性的己方手牌。");
     }
+  }
+  if (action.type === "trade" && action.sourceEntityId === undefined) {
+    errors.push("交易动作必须引用己方手牌实体。");
   }
 
   if (action.type === "end-turn") {

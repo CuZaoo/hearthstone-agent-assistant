@@ -35,6 +35,9 @@ interface ParserState {
   turn: number;
   activePlayer: ActivePlayer;
   gameMode: GameMode;
+  gameType?: string;
+  formatType?: string;
+  gameBuild?: number;
   animationDepth: number;
   visibleHistory: GameEvent[];
   uncertainties: Set<string>;
@@ -52,6 +55,7 @@ const PLAYER_LINE =
   /Player EntityID=(?<entityId>\d+) PlayerID=(?<playerId>\d+) GameAccountId=\[hi=(?<hi>\d+) lo=(?<lo>\d+)\]/;
 const GAME_ENTITY_LINE = /GameEntity EntityID=(?<entityId>\d+)/;
 const DEBUG_GAME_TYPE = /DebugPrintGame\(\) - GameType=(?<gameType>[A-Z0-9_]+)/;
+const DEBUG_BUILD_NUMBER = /DebugPrintGame\(\) - BuildNumber=(?<build>\d+)/;
 const DEBUG_FORMAT_TYPE =
   /DebugPrintGame\(\) - FormatType=(?<formatType>[A-Z0-9_]+)/;
 const DEBUG_PLAYER =
@@ -97,23 +101,25 @@ export class PowerLogParser {
     }
     this.rememberEventId(eventId);
 
+    const buildNumber = line.match(DEBUG_BUILD_NUMBER)?.groups?.build;
+    if (buildNumber) {
+      this.state.gameBuild = Number(buildNumber);
+      this.bumpRevision();
+      return;
+    }
+
     const gameType = line.match(DEBUG_GAME_TYPE)?.groups?.gameType;
     if (gameType) {
-      if (gameType.includes("BATTLEGROUNDS")) {
-        this.state.gameMode = "unsupported";
-      }
+      this.state.gameType = gameType;
+      this.updateGameMode();
       this.bumpRevision();
       return;
     }
 
     const formatType = line.match(DEBUG_FORMAT_TYPE)?.groups?.formatType;
     if (formatType) {
-      this.state.gameMode =
-        formatType === "FT_STANDARD"
-          ? "standard"
-          : formatType === "FT_UNKNOWN"
-            ? this.state.gameMode
-            : "unsupported";
+      this.state.formatType = formatType;
+      this.updateGameMode();
       this.bumpRevision();
       return;
     }
@@ -286,6 +292,7 @@ export class PowerLogParser {
     return Object.freeze({
       revision: String(this.revisionCounter),
       gameMode: this.state.gameMode,
+      gameType: this.state.gameType,
       turn: this.state.turn,
       activePlayer:
         this.state.activePlayerId !== undefined
@@ -296,6 +303,7 @@ export class PowerLogParser {
       visibleHistory: [...this.state.visibleHistory].slice(-50),
       uncertainties: [...this.state.uncertainties],
       cardCatalogVersion,
+      gameBuild: this.state.gameBuild,
       animationPending: this.state.animationDepth > 0,
       capturedAt: new Date().toISOString(),
     });
@@ -331,10 +339,8 @@ export class PowerLogParser {
           this.sideForPlayerId(this.state.activePlayerId) ?? "unknown";
       }
     } else if (tag === "FORMAT_TYPE") {
-      this.state.gameMode =
-        String(value).includes("STANDARD") || Number(value) === 2
-        ? "standard"
-        : "unsupported";
+      this.state.formatType = String(value);
+      this.updateGameMode();
     }
 
     this.inferSidesFromVisibleHand(entity);
@@ -557,6 +563,28 @@ export class PowerLogParser {
       if (oldest) {
         this.state.processedEventIds.delete(oldest);
       }
+    }
+  }
+
+  private updateGameMode(): void {
+    if (
+      this.state.gameType &&
+      !["GT_RANKED", "GT_CASUAL", "GT_FRIENDLY", "GT_VS_AI"].includes(
+        this.state.gameType,
+      )
+    ) {
+      this.state.gameMode = "unsupported";
+      return;
+    }
+    if (
+      this.state.formatType?.includes("STANDARD") ||
+      Number(this.state.formatType) === 2
+    ) {
+      this.state.gameMode = "standard";
+      return;
+    }
+    if (this.state.formatType && this.state.formatType !== "FT_UNKNOWN") {
+      this.state.gameMode = "unsupported";
     }
   }
 }

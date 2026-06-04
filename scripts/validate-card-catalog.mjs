@@ -16,6 +16,9 @@ if (catalog.locale !== "zhCN") {
 if (!catalog.version || catalog.version === "unconfigured") {
   errors.push("version 尚未配置。");
 }
+if (!Number.isInteger(catalog.gameBuild) || catalog.gameBuild <= 0) {
+  errors.push("gameBuild 未配置，无法检测卡牌快照是否过期。");
+}
 if (!Array.isArray(catalog.entries) || catalog.entries.length === 0) {
   errors.push("entries 不能为空。");
 }
@@ -65,4 +68,3 @@ function fail(message) {
   process.exitCode = 1;
   throw new Error(message);
 }
-

@@ -46,6 +46,7 @@ const output = {
   version: args.version ?? `hdt-${build ?? "unknown"}`,
   generatedAt: new Date().toISOString(),
   locale: "zhCN",
+  gameBuild: build ? Number(build) : undefined,
   entries,
 };
 await writeFile(resolve(args.out), `${JSON.stringify(output, null, 2)}\n`, "utf8");
@@ -152,4 +153,3 @@ function fail(message) {
   process.exitCode = 1;
   throw new Error(message);
 }
-

@@ -71,7 +71,7 @@ function Dashboard({ status }: { status: AppStatus }) {
         <StatusCard
           title="卡牌快照"
           ok={status.catalog.ready}
-          detail={`${status.catalog.version} · ${status.catalog.entryCount} 张`}
+          detail={`${status.catalog.version} · build ${status.catalog.gameBuild ?? "未知"} · ${status.catalog.entryCount} 张`}
         />
         <StatusCard
           title="当前局面"

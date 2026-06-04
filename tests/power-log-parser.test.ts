@@ -48,6 +48,8 @@ describe("PowerLogParser", () => {
     const snapshot = parser.snapshot("test-catalog");
 
     expect(snapshot.gameMode).toBe("standard");
+    expect(snapshot.gameType).toBe("GT_RANKED");
+    expect(snapshot.gameBuild).toBe(123456);
     expect(snapshot.activePlayer).toBe("self");
     expect(snapshot.turn).toBe(7);
     expect(snapshot.self.mana).toBe(6);
@@ -81,5 +83,17 @@ describe("PowerLogParser", () => {
     );
 
     expect(parser.snapshot("test-catalog").gameMode).toBe("standard");
+  });
+
+  it("rejects non-constructed game types even when the format is standard", () => {
+    const parser = new PowerLogParser();
+    parser.consumeLine(
+      "D 12:00:00.001 GameState.DebugPrintGame() - GameType=GT_ARENA",
+    );
+    parser.consumeLine(
+      "D 12:00:00.002 GameState.DebugPrintGame() - FormatType=FT_STANDARD",
+    );
+
+    expect(parser.snapshot("test-catalog").gameMode).toBe("unsupported");
   });
 });

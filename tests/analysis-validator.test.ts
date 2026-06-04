@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { validateAnalysisResult } from "../src/core/analysis-validator";
+import {
+  validateAnalysisResult,
+  validateSnapshotForAnalysis,
+} from "../src/core/analysis-validator";
 import { CardCatalog } from "../src/core/card-catalog";
 import { emptyPlayerState } from "../src/shared/defaults";
 import type { AnalysisResult, GameStateSnapshot } from "../src/shared/types";
@@ -8,6 +11,7 @@ const catalog = new CardCatalog({
   version: "test",
   generatedAt: "2026-01-01T00:00:00.000Z",
   locale: "zhCN",
+  gameBuild: 123456,
   entries: [
     {
       cardId: "CARD_001",
@@ -24,6 +28,7 @@ const catalog = new CardCatalog({
 const snapshot: GameStateSnapshot = {
   revision: "1",
   gameMode: "standard",
+  gameType: "GT_RANKED",
   turn: 1,
   activePlayer: "self",
   self: {
@@ -40,6 +45,7 @@ const snapshot: GameStateSnapshot = {
   visibleHistory: [],
   uncertainties: [],
   cardCatalogVersion: "test",
+  gameBuild: 123456,
   animationPending: false,
   capturedAt: "2026-01-01T00:00:00.000Z",
 };
@@ -153,5 +159,22 @@ describe("validateAnalysisResult", () => {
     };
 
     expect(validateAnalysisResult(result, snapshot, catalog).ok).toBe(false);
+  });
+});
+
+describe("validateSnapshotForAnalysis", () => {
+  it("rejects a card catalog from another game build", () => {
+    const staleCatalog = new CardCatalog({
+      version: "stale",
+      generatedAt: "2026-01-01T00:00:00.000Z",
+      locale: "zhCN",
+      gameBuild: 999999,
+      entries: catalog.list(),
+    });
+
+    const report = validateSnapshotForAnalysis(snapshot, staleCatalog);
+
+    expect(report.ok).toBe(false);
+    expect(report.errors.join(" ")).toContain("build");
   });
 });

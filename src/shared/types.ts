@@ -70,6 +70,7 @@ export interface GameEvent {
 export interface GameStateSnapshot {
   revision: string;
   gameMode: GameMode;
+  gameType?: string;
   turn: number;
   activePlayer: ActivePlayer;
   self: PlayerState;
@@ -77,6 +78,7 @@ export interface GameStateSnapshot {
   visibleHistory: GameEvent[];
   uncertainties: string[];
   cardCatalogVersion: string;
+  gameBuild?: number;
   animationPending: boolean;
   capturedAt: string;
 }
@@ -154,6 +156,7 @@ export interface CardCatalogStatus {
   ready: boolean;
   version: string;
   entryCount: number;
+  gameBuild?: number;
 }
 
 export interface AppStatus {

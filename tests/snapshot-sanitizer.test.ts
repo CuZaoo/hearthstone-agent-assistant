@@ -10,6 +10,7 @@ describe("sanitizeSnapshotForAgent", () => {
       version: "test",
       generatedAt: "2026-01-01T00:00:00.000Z",
       locale: "zhCN",
+      gameBuild: 123456,
       entries: [
         {
           cardId: "CARD_001",
@@ -25,6 +26,7 @@ describe("sanitizeSnapshotForAgent", () => {
     const snapshot: GameStateSnapshot = {
       revision: "1",
       gameMode: "standard",
+      gameType: "GT_RANKED",
       turn: 1,
       activePlayer: "self",
       self: {
@@ -52,6 +54,7 @@ describe("sanitizeSnapshotForAgent", () => {
       ],
       uncertainties: [],
       cardCatalogVersion: "test",
+      gameBuild: 123456,
       animationPending: false,
       capturedAt: "2026-01-01T00:00:00.000Z",
     };

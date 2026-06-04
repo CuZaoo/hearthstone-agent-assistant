@@ -230,6 +230,7 @@ async function analyzeCurrentState(): Promise<AppStatus> {
   if (busy) {
     return getStatus();
   }
+  const analysisStartedAt = Date.now();
   busy = true;
   statusMessage = "正在读取并校验当前局面…";
   broadcastStatus();
@@ -264,7 +265,20 @@ async function analyzeCurrentState(): Promise<AppStatus> {
 
     statusMessage = "正在请求 Agent 分析…";
     broadcastStatus();
-    const client = new AgentClient(settings, apiKey, catalog);
+    const remainingMs = settings.timeoutMs - (Date.now() - analysisStartedAt);
+    if (remainingMs < 1_000) {
+      throw new Error(`分析准备阶段已超过 ${settings.timeoutMs}ms 总预算。`);
+    }
+    const client = new AgentClient(
+      {
+        baseUrl: settings.baseUrl,
+        model: settings.model,
+        transport: settings.transport,
+        timeoutMs: remainingMs,
+      },
+      apiKey,
+      catalog,
+    );
     const requestedRevision = currentSnapshot.revision;
     const result = await client.analyze({
       snapshot: currentSnapshot,
@@ -333,6 +347,7 @@ function getStatus(): AppStatus {
       ready: catalog.isReady(),
       version: catalog.version,
       entryCount: catalog.size(),
+      gameBuild: catalog.gameBuild,
     },
     snapshot: currentSnapshot,
     analysis: currentAnalysis,
