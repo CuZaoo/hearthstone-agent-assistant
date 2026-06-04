@@ -20,19 +20,40 @@ export function sanitizeSnapshotForAgent(
       side: event.side,
       entityId: event.entityId,
       cardId: event.cardId,
-      text: event.text,
+      text: sanitizeEventText(event.type, event.text),
     })),
   };
 }
 
+function sanitizeEventText(type: string, text: string): string {
+  const match = text.match(/^(?<type>[A-Z0-9_]+)=(?<value>[A-Z0-9_-]+)$/);
+  return match?.groups?.type === type ? text : type;
+}
+
 function sanitizePlayer(player: PlayerState, catalog: CardCatalog): PlayerState {
+  const heroCatalogEntry = catalog.get(player.hero.cardId);
+  const weaponCatalogEntry = catalog.get(player.weapon?.cardId);
   return {
-    hero: { ...player.hero },
-    weapon: player.weapon ? { ...player.weapon } : undefined,
+    hero: {
+      ...player.hero,
+      name: heroCatalogEntry?.name ?? player.hero.name,
+      text: heroCatalogEntry?.text,
+    },
+    heroPower: player.heroPower
+      ? sanitizeCard(player.heroPower, catalog)
+      : undefined,
+    weapon: player.weapon
+      ? {
+          ...player.weapon,
+          name: weaponCatalogEntry?.name ?? player.weapon.name,
+          text: weaponCatalogEntry?.text,
+        }
+      : undefined,
     mana: player.mana,
     maxMana: player.maxMana,
     overloadLocked: player.overloadLocked,
     hand: player.hand.map((card) => sanitizeCard(card, catalog)),
+    handCount: player.handCount,
     board: player.board.map((card) => sanitizeCard(card, catalog)),
     deckCount: player.deckCount,
     secretCount: player.secretCount,
@@ -46,6 +67,7 @@ function sanitizeCard(card: CardReference, catalog: CardCatalog): CardReference 
     entityId: card.entityId,
     cardId: card.cardId,
     name: catalogEntry?.name ?? card.name,
+    text: catalogEntry?.text,
     zonePosition: card.zonePosition,
     attack: card.attack,
     health: card.health,
@@ -60,4 +82,3 @@ function sanitizeCard(card: CardReference, catalog: CardCatalog): CardReference 
     tags: {},
   };
 }
-

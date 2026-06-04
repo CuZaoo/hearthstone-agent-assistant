@@ -24,8 +24,14 @@ interface EntityState {
 interface ParserState {
   entities: Map<number, EntityState>;
   playerIds: Set<number>;
+  playerIdByEntityId: Map<number, number>;
+  playerEntityIdByPlayerId: Map<number, number>;
+  playerIdByName: Map<string, number>;
+  gameEntityId?: number;
   selfPlayerId?: number;
   opponentPlayerId?: number;
+  activePlayerId?: number;
+  currentEntityId?: number;
   turn: number;
   activePlayer: ActivePlayer;
   gameMode: GameMode;
@@ -33,25 +39,39 @@ interface ParserState {
   visibleHistory: GameEvent[];
   uncertainties: Set<string>;
   processedEventIds: Set<string>;
+  processedEventIdQueue: string[];
 }
 
 const TAG_LINE =
-  /TAG_CHANGE Entity=(?:\[(?<entity>[^\]]+)\]|(?<simple>\d+)) tag=(?<tag>[A-Z0-9_]+) value=(?<value>[^\s]+)/;
+  /TAG_CHANGE Entity=(?:\[(?<entity>.*)\]|(?<simple>\d+)|(?<named>[^\s]+)) tag=(?<tag>[A-Z0-9_]+) value=(?<value>[^\s]+)/;
 const SHOW_LINE =
-  /SHOW_ENTITY - Updating Entity=(?:\[(?<entity>[^\]]+)\]|(?<simple>\d+)) CardID=(?<cardId>[A-Z0-9_]+)/;
+  /SHOW_ENTITY - Updating Entity=(?:\[(?<entity>.*)\]|(?<simple>\d+)) CardID=(?<cardId>[A-Z0-9_]+)/;
 const FULL_LINE =
   /FULL_ENTITY - Creating ID=(?<id>\d+) CardID=(?<cardId>[A-Z0-9_]*)/;
+const PLAYER_LINE =
+  /Player EntityID=(?<entityId>\d+) PlayerID=(?<playerId>\d+) GameAccountId=\[hi=(?<hi>\d+) lo=(?<lo>\d+)\]/;
+const GAME_ENTITY_LINE = /GameEntity EntityID=(?<entityId>\d+)/;
+const DEBUG_GAME_TYPE = /DebugPrintGame\(\) - GameType=(?<gameType>[A-Z0-9_]+)/;
+const DEBUG_FORMAT_TYPE =
+  /DebugPrintGame\(\) - FormatType=(?<formatType>[A-Z0-9_]+)/;
+const DEBUG_PLAYER =
+  /DebugPrintGame\(\) - PlayerID=(?<playerId>\d+), PlayerName=(?<name>.+)$/;
+const ENTITY_TAG_LINE =
+  /(?:GameState|PowerTaskList)\.DebugPrintPower\(\) -\s+tag=(?<tag>[A-Z0-9_]+) value=(?<value>[^\s]+)/;
 const BLOCK_START = /BLOCK_START BlockType=(?<type>[A-Z_]+)/;
 const BLOCK_END = /BLOCK_END/;
+const CREATE_GAME = /CREATE_GAME/;
 const TIMESTAMP = /^D\s+(?<time>\d{2}:\d{2}:\d{2}\.\d+)\s+/;
 
 export class PowerLogParser {
   private state: ParserState = this.newState();
   private revisionCounter = 0;
+  private lastCreateGameTimestamp?: string;
 
   reset(): void {
     this.state = this.newState();
     this.revisionCounter = 0;
+    this.lastCreateGameTimestamp = undefined;
   }
 
   consume(content: string): void {
@@ -63,18 +83,59 @@ export class PowerLogParser {
   }
 
   consumeLine(line: string): void {
+    if (CREATE_GAME.test(line)) {
+      const timestamp = line.match(TIMESTAMP)?.groups?.time;
+      if (!timestamp || timestamp !== this.lastCreateGameTimestamp) {
+        this.startNewGame();
+        this.lastCreateGameTimestamp = timestamp;
+      }
+    }
+
     const eventId = createHash("sha1").update(line).digest("hex");
     if (this.state.processedEventIds.has(eventId)) {
       return;
     }
-    this.state.processedEventIds.add(eventId);
+    this.rememberEventId(eventId);
+
+    const gameType = line.match(DEBUG_GAME_TYPE)?.groups?.gameType;
+    if (gameType) {
+      if (gameType.includes("BATTLEGROUNDS")) {
+        this.state.gameMode = "unsupported";
+      }
+      this.bumpRevision();
+      return;
+    }
+
+    const formatType = line.match(DEBUG_FORMAT_TYPE)?.groups?.formatType;
+    if (formatType) {
+      this.state.gameMode =
+        formatType === "FT_STANDARD"
+          ? "standard"
+          : formatType === "FT_UNKNOWN"
+            ? this.state.gameMode
+            : "unsupported";
+      this.bumpRevision();
+      return;
+    }
+
+    const debugPlayer = line.match(DEBUG_PLAYER);
+    if (debugPlayer?.groups) {
+      this.state.playerIdByName.set(
+        debugPlayer.groups.name.trim(),
+        Number(debugPlayer.groups.playerId),
+      );
+      this.bumpRevision();
+      return;
+    }
 
     if (BLOCK_START.test(line)) {
+      this.state.currentEntityId = undefined;
       this.state.animationDepth += 1;
       this.bumpRevision();
       return;
     }
     if (BLOCK_END.test(line)) {
+      this.state.currentEntityId = undefined;
       this.state.animationDepth = Math.max(0, this.state.animationDepth - 1);
       this.bumpRevision();
       return;
@@ -83,7 +144,9 @@ export class PowerLogParser {
     const full = line.match(FULL_LINE);
     if (full?.groups) {
       const entityId = Number(full.groups.id);
-      this.getEntity(entityId).cardId = full.groups.cardId || undefined;
+      const entity = this.getEntity(entityId);
+      entity.cardId = full.groups.cardId || undefined;
+      this.state.currentEntityId = entityId;
       this.bumpRevision();
       return;
     }
@@ -94,6 +157,7 @@ export class PowerLogParser {
       if (entityId !== undefined) {
         const entity = this.getEntity(entityId);
         entity.cardId = show.groups.cardId;
+        this.state.currentEntityId = entityId;
         this.inferSidesFromVisibleHand(entity);
         this.bumpRevision();
       }
@@ -107,6 +171,42 @@ export class PowerLogParser {
         return;
       }
       this.applyTag(entityId, tag.groups.tag, tag.groups.value, line);
+      this.state.currentEntityId = undefined;
+      return;
+    }
+
+    const player = line.match(PLAYER_LINE);
+    if (player?.groups) {
+      const entityId = Number(player.groups.entityId);
+      this.registerPlayer(
+        entityId,
+        Number(player.groups.playerId),
+      );
+      if (player.groups.hi !== "0" || player.groups.lo !== "0") {
+        this.setSelfPlayerId(Number(player.groups.playerId));
+      }
+      this.state.currentEntityId = entityId;
+      this.bumpRevision();
+      return;
+    }
+
+    const gameEntity = line.match(GAME_ENTITY_LINE);
+    if (gameEntity?.groups) {
+      this.state.currentEntityId = Number(gameEntity.groups.entityId);
+      this.state.gameEntityId = this.state.currentEntityId;
+      this.getEntity(this.state.currentEntityId);
+      this.bumpRevision();
+      return;
+    }
+
+    const entityTag = line.match(ENTITY_TAG_LINE);
+    if (entityTag?.groups && this.state.currentEntityId !== undefined) {
+      this.applyTag(
+        this.state.currentEntityId,
+        entityTag.groups.tag,
+        entityTag.groups.value,
+        line,
+      );
     }
   }
 
@@ -122,40 +222,56 @@ export class PowerLogParser {
       const player = side === "self" ? self : opponent;
       const zone = entity.zone ?? String(entity.tags.ZONE ?? "");
 
-      if (zone === "HAND" && side === "self") {
-        player.hand.push(this.toCardReference(entity));
-      } else if (zone === "PLAY") {
+      if (zone === "HAND") {
+        player.handCount += 1;
+        if (side === "self") {
+          player.hand.push(this.toCardReference(entity));
+        }
+      } else if (zone === "PLAY" || zone === "SECRET") {
         if (this.isHero(entity)) {
+          const health = this.numberTag(entity, "HEALTH");
+          const damage = this.numberTag(entity, "DAMAGE") ?? 0;
           player.hero = {
             entityId: entity.entityId,
             cardId: entity.cardId,
             name: entity.name,
-            health: this.numberTag(entity, "HEALTH"),
+            health: health === undefined ? undefined : Math.max(0, health - damage),
             armor: this.numberTag(entity, "ARMOR"),
             attack: this.numberTag(entity, "ATK"),
             exhausted: this.booleanTag(entity, "EXHAUSTED"),
           };
+        } else if (this.isHeroPower(entity)) {
+          player.heroPower = this.toCardReference(entity);
         } else if (this.isWeapon(entity)) {
+          const durability = this.numberTag(entity, "DURABILITY");
+          const damage = this.numberTag(entity, "DAMAGE") ?? 0;
           player.weapon = {
             entityId: entity.entityId,
             cardId: entity.cardId,
             name: entity.name,
             attack: this.numberTag(entity, "ATK"),
-            durability: this.numberTag(entity, "DURABILITY"),
+            durability:
+              durability === undefined ? undefined : Math.max(0, durability - damage),
           };
-        } else if (this.isSecret(entity)) {
+        } else if (this.isSecret(entity) || zone === "SECRET") {
           player.secretCount += 1;
-        } else {
+        } else if (this.isBoardEntity(entity)) {
           player.board.push(this.toCardReference(entity));
         }
+      } else if (zone === "DECK") {
+        player.deckCount = (player.deckCount ?? 0) + 1;
       }
 
       if (this.isPlayer(entity)) {
         const resources = this.numberTag(entity, "RESOURCES") ?? player.maxMana;
         const resourcesUsed = this.numberTag(entity, "RESOURCES_USED") ?? 0;
+        const temporaryResources = this.numberTag(entity, "TEMP_RESOURCES") ?? 0;
         const overloadLocked = this.numberTag(entity, "OVERLOAD_LOCKED") ?? 0;
         player.maxMana = resources;
-        player.mana = Math.max(0, resources - resourcesUsed - overloadLocked);
+        player.mana = Math.max(
+          0,
+          resources + temporaryResources - resourcesUsed - overloadLocked,
+        );
         player.overloadLocked =
           overloadLocked;
         player.deckCount = this.numberTag(entity, "DECK_COUNT") ?? player.deckCount;
@@ -171,7 +287,10 @@ export class PowerLogParser {
       revision: String(this.revisionCounter),
       gameMode: this.state.gameMode,
       turn: this.state.turn,
-      activePlayer: this.state.activePlayer,
+      activePlayer:
+        this.state.activePlayerId !== undefined
+          ? (this.sideForPlayerId(this.state.activePlayerId) ?? "unknown")
+          : this.state.activePlayer,
       self,
       opponent,
       visibleHistory: [...this.state.visibleHistory].slice(-50),
@@ -201,13 +320,19 @@ export class PowerLogParser {
     } else if (tag === "TURN") {
       this.state.turn = Number(value);
     } else if (tag === "PLAYSTATE") {
-      this.registerPlayer(entityId);
+      this.registerPlayer(entityId, this.playerIdForEntity(entityId));
+    } else if (tag === "PLAYER_ID") {
+      this.registerPlayer(entityId, Number(value));
     } else if (tag === "CURRENT_PLAYER") {
-      this.registerPlayer(entityId);
-      this.state.activePlayer =
-        Number(value) === 1 ? this.sideForPlayerId(entityId) : this.state.activePlayer;
+      this.registerPlayer(entityId, this.playerIdForEntity(entityId));
+      if (Number(value) === 1) {
+        this.state.activePlayerId = this.playerIdForEntity(entityId);
+        this.state.activePlayer =
+          this.sideForPlayerId(this.state.activePlayerId) ?? "unknown";
+      }
     } else if (tag === "FORMAT_TYPE") {
-      this.state.gameMode = String(value).includes("STANDARD")
+      this.state.gameMode =
+        String(value).includes("STANDARD") || Number(value) === 2
         ? "standard"
         : "unsupported";
     }
@@ -228,8 +353,10 @@ export class PowerLogParser {
     this.bumpRevision();
   }
 
-  private registerPlayer(entityId: number): void {
-    this.state.playerIds.add(entityId);
+  private registerPlayer(entityId: number, playerId: number): void {
+    this.state.playerIdByEntityId.set(entityId, playerId);
+    this.state.playerEntityIdByPlayerId.set(playerId, entityId);
+    this.state.playerIds.add(playerId);
     if (this.state.selfPlayerId !== undefined) {
       this.state.opponentPlayerId = [...this.state.playerIds].find(
         (id) => id !== this.state.selfPlayerId,
@@ -244,10 +371,18 @@ export class PowerLogParser {
       entity.cardId &&
       entity.controller !== undefined
     ) {
-      this.state.selfPlayerId = entity.controller;
-      this.state.opponentPlayerId = [...this.state.playerIds].find(
-        (id) => id !== entity.controller,
-      );
+      this.setSelfPlayerId(entity.controller);
+    }
+  }
+
+  private setSelfPlayerId(playerId: number): void {
+    this.state.selfPlayerId = playerId;
+    this.state.opponentPlayerId = [...this.state.playerIds].find(
+      (id) => id !== playerId,
+    );
+    if (this.state.activePlayerId !== undefined) {
+      this.state.activePlayer =
+        this.sideForPlayerId(this.state.activePlayerId) ?? "unknown";
     }
   }
 
@@ -277,9 +412,26 @@ export class PowerLogParser {
     return undefined;
   }
 
+  private playerIdForEntity(entityId: number): number {
+    return (
+      this.state.playerIdByEntityId.get(entityId) ??
+      this.numberTag(this.getEntity(entityId), "PLAYER_ID") ??
+      entityId
+    );
+  }
+
   private entityIdFromGroups(groups: Record<string, string>): number | undefined {
     if (groups.simple) {
       return Number(groups.simple);
+    }
+    if (groups.named === "GameEntity") {
+      return this.state.gameEntityId;
+    }
+    if (groups.named) {
+      const playerId = this.state.playerIdByName.get(groups.named);
+      return playerId === undefined
+        ? undefined
+        : this.state.playerEntityIdByPlayerId.get(playerId);
     }
     const source = groups.entity;
     if (!source) {
@@ -291,9 +443,15 @@ export class PowerLogParser {
       const entity = this.getEntity(id);
       entity.name ??= source.match(/entityName=([^\]]+?)(?:\s+id=|$)/)?.[1];
       entity.cardId ??= source.match(/cardId=([A-Z0-9_]+)/)?.[1];
-      entity.controller ??= Number(
-        source.match(/player=(\d+)/)?.[1] ?? entity.controller,
-      );
+      entity.zone ??= source.match(/zone=([A-Z]+)/)?.[1];
+      const zonePosition = source.match(/zonePos=(\d+)/)?.[1];
+      const controller = source.match(/player=(\d+)/)?.[1];
+      if (zonePosition !== undefined) {
+        entity.zonePosition ??= Number(zonePosition);
+      }
+      if (controller !== undefined) {
+        entity.controller ??= Number(controller);
+      }
       return id;
     }
     return undefined;
@@ -320,15 +478,23 @@ export class PowerLogParser {
   }
 
   private isPlayer(entity: EntityState): boolean {
-    return String(entity.tags.CARDTYPE) === "PLAYER";
+    return isCardType(entity, "PLAYER", 2);
   }
 
   private isHero(entity: EntityState): boolean {
-    return String(entity.tags.CARDTYPE) === "HERO";
+    return isCardType(entity, "HERO", 3);
   }
 
   private isWeapon(entity: EntityState): boolean {
-    return String(entity.tags.CARDTYPE) === "WEAPON";
+    return isCardType(entity, "WEAPON", 7);
+  }
+
+  private isHeroPower(entity: EntityState): boolean {
+    return isCardType(entity, "HERO_POWER", 10);
+  }
+
+  private isBoardEntity(entity: EntityState): boolean {
+    return isCardType(entity, "MINION", 4) || isCardType(entity, "LOCATION", 39);
   }
 
   private isSecret(entity: EntityState): boolean {
@@ -360,6 +526,9 @@ export class PowerLogParser {
     return {
       entities: new Map(),
       playerIds: new Set(),
+      playerIdByEntityId: new Map(),
+      playerEntityIdByPlayerId: new Map(),
+      playerIdByName: new Map(),
       turn: 0,
       activePlayer: "unknown",
       gameMode: "unknown",
@@ -367,7 +536,28 @@ export class PowerLogParser {
       visibleHistory: [],
       uncertainties: new Set(),
       processedEventIds: new Set(),
+      processedEventIdQueue: [],
     };
+  }
+
+  private startNewGame(): void {
+    const processedEventIds = this.state.processedEventIds;
+    const processedEventIdQueue = this.state.processedEventIdQueue;
+    this.state = this.newState();
+    this.state.processedEventIds = processedEventIds;
+    this.state.processedEventIdQueue = processedEventIdQueue;
+    this.bumpRevision();
+  }
+
+  private rememberEventId(eventId: string): void {
+    this.state.processedEventIds.add(eventId);
+    this.state.processedEventIdQueue.push(eventId);
+    while (this.state.processedEventIdQueue.length > 100_000) {
+      const oldest = this.state.processedEventIdQueue.shift();
+      if (oldest) {
+        this.state.processedEventIds.delete(oldest);
+      }
+    }
   }
 }
 
@@ -396,4 +586,11 @@ function isVisibleEventTag(tag: string): boolean {
 
 function byZonePosition(a: CardReference, b: CardReference): number {
   return (a.zonePosition ?? 0) - (b.zonePosition ?? 0);
+}
+
+function isCardType(entity: EntityState, name: string, numericValue: number): boolean {
+  return (
+    String(entity.tags.CARDTYPE) === name ||
+    Number(entity.tags.CARDTYPE) === numericValue
+  );
 }

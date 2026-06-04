@@ -28,11 +28,15 @@ const snapshot: GameStateSnapshot = {
   activePlayer: "self",
   self: {
     ...emptyPlayerState(),
+    hero: { entityId: 1, cardId: "HERO_001", health: 30 },
     mana: 1,
     maxMana: 1,
     hand: [{ entityId: 10, cardId: "CARD_001", cost: 1, tags: {} }],
   },
-  opponent: emptyPlayerState(),
+  opponent: {
+    ...emptyPlayerState(),
+    hero: { entityId: 2, cardId: "HERO_002", health: 30 },
+  },
   visibleHistory: [],
   uncertainties: [],
   cardCatalogVersion: "test",
@@ -80,6 +84,65 @@ describe("validateAnalysisResult", () => {
               type: "play-card",
               sourceEntityId: 999,
               description: "引用不存在的实体",
+            },
+          ],
+          rationale: "",
+          risks: [],
+          confidence: 0.5,
+        },
+      ],
+    };
+
+    expect(validateAnalysisResult(result, snapshot, catalog).ok).toBe(false);
+  });
+
+  it("rejects playing the same hand entity twice", () => {
+    const result: AnalysisResult = {
+      snapshotRevision: "1",
+      summary: "重复出牌",
+      warnings: [],
+      candidates: [
+        {
+          rank: 1,
+          actions: [
+            {
+              type: "play-card",
+              sourceEntityId: 10,
+              sourceCardId: "CARD_001",
+              description: "第一次打出",
+            },
+            {
+              type: "play-card",
+              sourceEntityId: 10,
+              sourceCardId: "CARD_001",
+              description: "第二次打出",
+            },
+          ],
+          rationale: "",
+          risks: [],
+          confidence: 0.5,
+        },
+      ],
+    };
+
+    expect(validateAnalysisResult(result, snapshot, catalog).ok).toBe(false);
+  });
+
+  it("rejects attack actions sourced from hand cards", () => {
+    const result: AnalysisResult = {
+      snapshotRevision: "1",
+      summary: "非法攻击",
+      warnings: [],
+      candidates: [
+        {
+          rank: 1,
+          actions: [
+            {
+              type: "attack",
+              sourceEntityId: 10,
+              targetEntityId: 2,
+              targetSide: "opponent",
+              description: "用手牌攻击",
             },
           ],
           rationale: "",

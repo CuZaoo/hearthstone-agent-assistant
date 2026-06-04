@@ -7,6 +7,7 @@ export interface CardReference {
   entityId: number;
   cardId?: string;
   name?: string;
+  text?: string;
   zonePosition?: number;
   attack?: number;
   health?: number;
@@ -25,6 +26,7 @@ export interface HeroState {
   entityId?: number;
   cardId?: string;
   name?: string;
+  text?: string;
   health?: number;
   armor?: number;
   attack?: number;
@@ -35,17 +37,20 @@ export interface WeaponState {
   entityId: number;
   cardId?: string;
   name?: string;
+  text?: string;
   attack?: number;
   durability?: number;
 }
 
 export interface PlayerState {
   hero: HeroState;
+  heroPower?: CardReference;
   weapon?: WeaponState;
   mana: number;
   maxMana: number;
   overloadLocked: number;
   hand: CardReference[];
+  handCount: number;
   board: CardReference[];
   deckCount?: number;
   secretCount: number;
@@ -145,13 +150,19 @@ export interface VisualValidationReport extends ValidationReport {
   matchedEntityIds: number[];
 }
 
+export interface CardCatalogStatus {
+  ready: boolean;
+  version: string;
+  entryCount: number;
+}
+
 export interface AppStatus {
   settings: AppSettings;
   log: LogStatus;
+  catalog: CardCatalogStatus;
   snapshot?: GameStateSnapshot;
   analysis?: AnalysisResult;
   visualValidation?: VisualValidationReport;
   busy: boolean;
   message?: string;
 }
-

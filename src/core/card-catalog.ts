@@ -53,6 +53,10 @@ export class CardCatalog {
     return this.version !== "unconfigured" && this.entries.size > 0;
   }
 
+  size(): number {
+    return this.entries.size;
+  }
+
   list(): CardCatalogEntry[] {
     return [...this.entries.values()];
   }

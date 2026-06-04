@@ -43,11 +43,53 @@ npm run package
 %LOCALAPPDATA%\Blizzard\Hearthstone\Logs\Power.log
 ```
 
+应用也会自动读取 Hearthstone Deck Tracker 的本地配置，并在炉石安装目录的
+`Logs\Hearthstone_日期时间\Power.log` 会话目录中切换到最新日志。
+
 ## 卡牌快照
 
 `assets/card-catalog.zhCN.json` 当前是未配置占位文件。应用会阻止在缺少卡牌元数据或视觉特征时发起分析，避免输出不可靠建议。
 
 正式测试前需要在得到资源下载授权后，使用官方卡牌数据制作标准模式 `zhCN` 快照。每条记录至少需要卡牌 ID、名称、文本、费用、标准模式标记和本地图像特征哈希；发布包不应包含完整卡图。
+
+项目提供两个不会联网的本地脚本：
+
+```powershell
+node scripts/build-card-catalog.mjs `
+  --cards .\local-data\cards.zhCN.json `
+  --sets .\local-data\standard-set-ids.json `
+  --features .\local-data\image-features.json `
+  --version 2026.06.04 `
+  --out .\assets\card-catalog.zhCN.json
+
+npm run catalog:validate
+```
+
+- `cards.zhCN.json` 可以是官方卡牌 API 返回的 `cards` 数组或包含该数组的对象。
+- `standard-set-ids.json` 是标准卡池的 set ID 数组，或包含 `standardSetIds` 数组的对象。
+- `image-features.json` 是 `cardId` 到 16 位十六进制 dHash 的对象。
+- 脚本只读取本地文件，不会下载资源。
+
+如果本机已安装 Hearthstone Deck Tracker，也可以直接从其现有
+`CardDefs.base.xml` 生成元数据：
+
+```powershell
+npm run catalog:import-hdt -- `
+  --xml "$env:APPDATA\HearthstoneDeckTracker\CardDefs\CardDefs.base.xml" `
+  --sets .\local-data\standard-set-ids.json `
+  --features .\local-data\image-features.json `
+  --out .\assets\card-catalog.zhCN.json
+```
+
+如果已经有按 `cardId` 命名的本地卡牌美术图片目录，可生成视觉特征：
+
+```powershell
+npm run features:build -- `
+  --images .\local-data\card-art `
+  --out .\local-data\image-features.json
+```
+
+视觉特征工具只读取本地图片并写入哈希，不会把图片打包进应用。
 
 ## 隐私
 
@@ -62,4 +104,3 @@ npm run package
 
 - [Blizzard EULA](https://www.blizzard.com/en-us/company/legal/eula.html)
 - [Blizzard Anti-Cheating Agreement](https://www.blizzard.com/legal/cd5930c0-2784-420c-a23d-1e0d6ff8599b/anti-cheating-vereinbarung)
-

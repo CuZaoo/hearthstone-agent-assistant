@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<CardDefs build="test-build">
+  <Entity CardID="TEST_CARD_001" ID="1" version="2">
+    <Tag enumID="185" name="CARDNAME" type="LocString">
+      <enUS>Test Spell</enUS>
+      <zhCN>测试法术</zhCN>
+    </Tag>
+    <Tag enumID="184" name="CARDTEXT" type="LocString">
+      <enUS>Deal 1 damage.</enUS>
+      <zhCN>造成1点伤害。</zhCN>
+    </Tag>
+    <Tag enumID="183" name="CARD_SET" type="Int" value="100"/>
+    <Tag enumID="202" name="CARDTYPE" type="Int" value="5"/>
+    <Tag enumID="48" name="COST" type="Int" value="1"/>
+    <Tag enumID="321" name="COLLECTIBLE" type="Int" value="1"/>
+  </Entity>
+  <Entity CardID="OLD_CARD_001" ID="2" version="2">
+    <Tag enumID="185" name="CARDNAME" type="LocString">
+      <enUS>Old Card</enUS>
+      <zhCN>非标准卡牌</zhCN>
+    </Tag>
+    <Tag enumID="183" name="CARD_SET" type="Int" value="99"/>
+    <Tag enumID="202" name="CARDTYPE" type="Int" value="5"/>
+  </Entity>
+</CardDefs>
+

@@ -1,6 +1,7 @@
 import { EventEmitter } from "node:events";
 import { open, stat } from "node:fs/promises";
 import type { Stats } from "node:fs";
+import { StringDecoder } from "node:string_decoder";
 import type { LogStatus } from "../shared/types.js";
 import { PowerLogParser } from "./power-log-parser.js";
 
@@ -11,11 +12,13 @@ export interface PowerLogWatcherEvents {
 }
 
 export class PowerLogWatcher extends EventEmitter<PowerLogWatcherEvents> {
+  private static readonly READ_CHUNK_SIZE = 1024 * 1024;
   private timer?: NodeJS.Timeout;
   private offset = 0;
   private lastSize = 0;
   private lastModifiedMs = 0;
   private carry = "";
+  private decoder = new StringDecoder("utf8");
 
   constructor(
     readonly path: string,
@@ -65,23 +68,35 @@ export class PowerLogWatcher extends EventEmitter<PowerLogWatcherEvents> {
     if (rotated) {
       this.offset = 0;
       this.carry = "";
+      this.decoder = new StringDecoder("utf8");
       this.parser.reset();
     }
 
     if (fileStats.size > this.offset) {
-      const length = fileStats.size - this.offset;
-      const buffer = Buffer.alloc(length);
       const file = await open(this.path, "r");
       try {
-        await file.read(buffer, 0, length, this.offset);
+        let position = this.offset;
+        while (position < fileStats.size) {
+          const length = Math.min(
+            PowerLogWatcher.READ_CHUNK_SIZE,
+            fileStats.size - position,
+          );
+          const buffer = Buffer.alloc(length);
+          const { bytesRead } = await file.read(buffer, 0, length, position);
+          if (bytesRead === 0) {
+            break;
+          }
+          position += bytesRead;
+          const content =
+            this.carry + this.decoder.write(buffer.subarray(0, bytesRead));
+          const lines = content.split(/\r?\n/);
+          this.carry = lines.pop() ?? "";
+          this.parser.consume(lines.join("\n"));
+        }
+        this.offset = position;
       } finally {
         await file.close();
       }
-      this.offset = fileStats.size;
-      const content = this.carry + buffer.toString("utf8");
-      const lines = content.split(/\r?\n/);
-      this.carry = lines.pop() ?? "";
-      this.parser.consume(lines.join("\n"));
       this.emit("change");
     }
 

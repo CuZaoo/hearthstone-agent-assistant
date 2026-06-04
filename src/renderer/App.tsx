@@ -63,20 +63,34 @@ function Dashboard({ status }: { status: AppStatus }) {
       </header>
 
       <section className="status-grid">
-        <StatusCard title="Power.log" ok={status.log.available} detail={status.log.message} />
+        <StatusCard
+          title="Power.log"
+          ok={status.log.available}
+          detail={`${status.log.message} ${status.log.path}`}
+        />
+        <StatusCard
+          title="卡牌快照"
+          ok={status.catalog.ready}
+          detail={`${status.catalog.version} · ${status.catalog.entryCount} 张`}
+        />
         <StatusCard
           title="当前局面"
           ok={Boolean(status.snapshot)}
           detail={
             status.snapshot
-              ? `回合 ${status.snapshot.turn} · ${status.snapshot.activePlayer === "self" ? "己方回合" : "非己方回合"}`
+              ? `回合 ${status.snapshot.turn} · 手牌 ${status.snapshot.self.handCount} · 场面 ${status.snapshot.self.board.length}/${status.snapshot.opponent.board.length}`
               : "等待日志事件"
           }
         />
         <StatusCard
           title="视觉校验"
           ok={status.visualValidation?.ok === true}
-          detail={status.visualValidation?.errors[0] ?? "尚未执行"}
+          detail={
+            status.visualValidation?.errors[0] ??
+            (status.visualValidation
+              ? `已匹配 ${status.visualValidation.matchedEntityIds.length} 个实体`
+              : "尚未执行")
+          }
         />
       </section>
 
@@ -265,4 +279,3 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
     </label>
   );
 }
-

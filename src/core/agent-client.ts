@@ -257,5 +257,9 @@ function parseAnalysisResult(text: string): AnalysisResult {
 }
 
 function joinUrl(baseUrl: string, path: string): string {
-  return `${baseUrl.replace(/\/+$/, "")}${path}`;
+  const normalizedBase = baseUrl.replace(/\/+$/, "");
+  if (normalizedBase.endsWith("/v1") && path.startsWith("/v1/")) {
+    return `${normalizedBase}${path.slice(3)}`;
+  }
+  return `${normalizedBase}${path}`;
 }

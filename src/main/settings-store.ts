@@ -20,13 +20,15 @@ export class SettingsStore {
     }
   }
 
-  async save(settings: AppSettings): Promise<void> {
+  async save(settings: AppSettings): Promise<AppSettings> {
+    const normalized = normalizeSettings(settings);
     await mkdir(dirname(this.path), { recursive: true });
     await writeFile(
       this.path,
-      `${JSON.stringify(normalizeSettings(settings), null, 2)}\n`,
+      `${JSON.stringify(normalized, null, 2)}\n`,
       "utf8",
     );
+    return normalized;
   }
 }
 
@@ -39,4 +41,3 @@ function normalizeSettings(settings: AppSettings): AppSettings {
     model: settings.model.trim(),
   };
 }
-

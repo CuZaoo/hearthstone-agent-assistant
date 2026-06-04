@@ -36,5 +36,50 @@ describe("PowerLogParser", () => {
 
     expect(parser.snapshot("test-catalog").revision).toBe(firstRevision);
   });
-});
 
+  it("parses attached entity tags and maps player entity IDs to controller IDs", () => {
+    const parser = new PowerLogParser();
+    const fixture = readFileSync(
+      join(import.meta.dirname, "fixtures", "power-log-attached-tags.txt"),
+      "utf8",
+    );
+
+    parser.consume(fixture);
+    const snapshot = parser.snapshot("test-catalog");
+
+    expect(snapshot.gameMode).toBe("standard");
+    expect(snapshot.activePlayer).toBe("self");
+    expect(snapshot.turn).toBe(7);
+    expect(snapshot.self.mana).toBe(6);
+    expect(snapshot.self.handCount).toBe(1);
+    expect(snapshot.self.hero.cardId).toBe("TEST_HERO_001");
+    expect(snapshot.opponent.hero.cardId).toBe("TEST_HERO_002");
+    expect(snapshot.self.hand[0]?.cardId).toBe("TEST_CARD_001");
+    expect(snapshot.self.board.map((card) => card.cardId)).toEqual([
+      "TEST_MINION_001",
+    ]);
+  });
+
+  it("resets the game state when a new game starts", () => {
+    const parser = new PowerLogParser();
+    parser.consumeLine(
+      "D 12:00:00.001 GameState.DebugPrintPower() - TAG_CHANGE Entity=1 tag=TURN value=9",
+    );
+    parser.consumeLine("D 12:01:00.001 GameState.DebugPrintPower() - CREATE_GAME");
+
+    expect(parser.snapshot("test-catalog").turn).toBe(0);
+  });
+
+  it("does not reset the same game when CREATE_GAME is duplicated at one timestamp", () => {
+    const parser = new PowerLogParser();
+    parser.consumeLine("D 12:00:00.001 GameState.DebugPrintPower() - CREATE_GAME");
+    parser.consumeLine(
+      "D 12:00:00.001 GameState.DebugPrintGame() - FormatType=FT_STANDARD",
+    );
+    parser.consumeLine(
+      "D 12:00:00.001 PowerTaskList.DebugPrintPower() -     CREATE_GAME",
+    );
+
+    expect(parser.snapshot("test-catalog").gameMode).toBe("standard");
+  });
+});

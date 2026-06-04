@@ -21,8 +21,8 @@ export function emptyPlayerState(): PlayerState {
     maxMana: 0,
     overloadLocked: 0,
     hand: [],
+    handCount: 0,
     board: [],
     secretCount: 0,
   };
 }
-

@@ -23,6 +23,10 @@ import type {
 } from "../shared/types.js";
 import { CredentialStore } from "./credential-store.js";
 import { HistoryDatabase } from "./history-database.js";
+import {
+  expandEnvironmentVariables,
+  locatePowerLog,
+} from "./power-log-locator.js";
 import { SettingsStore } from "./settings-store.js";
 import { VisualValidator } from "./visual-validator.js";
 
@@ -34,6 +38,7 @@ let historyDatabase: HistoryDatabase;
 let catalog: CardCatalog;
 let parser: PowerLogParser;
 let watcher: PowerLogWatcher | undefined;
+let logDiscoveryTimer: NodeJS.Timeout | undefined;
 let settings: AppSettings;
 let currentSnapshot: GameStateSnapshot | undefined;
 let currentAnalysis: AnalysisResult | undefined;
@@ -71,7 +76,7 @@ app.whenReady().then(async () => {
   createWindows();
   registerIpc();
   registerShortcuts();
-  startWatcher();
+  await startWatcher();
   broadcastStatus();
 });
 
@@ -83,6 +88,9 @@ app.on("window-all-closed", () => {
 
 app.on("will-quit", () => {
   watcher?.stop();
+  if (logDiscoveryTimer) {
+    clearInterval(logDiscoveryTimer);
+  }
   globalShortcut.unregisterAll();
   historyDatabase?.close();
 });
@@ -155,9 +163,8 @@ function registerIpc(): void {
   ipcMain.handle(
     IPC.saveSettings,
     async (_event, nextSettings: AppSettings) => {
-      settings = nextSettings;
-      await settingsStore.save(settings);
-      startWatcher();
+      settings = await settingsStore.save(nextSettings);
+      await startWatcher();
       setOverlayVisible(settings.overlayVisible);
       broadcastStatus();
       return getStatus();
@@ -165,12 +172,34 @@ function registerIpc(): void {
   );
 }
 
-function startWatcher(): void {
+async function startWatcher(): Promise<void> {
+  if (logDiscoveryTimer) {
+    clearInterval(logDiscoveryTimer);
+  }
+  await refreshWatcher();
+  logDiscoveryTimer = setInterval(() => void refreshWatcher(), 2_000);
+}
+
+async function refreshWatcher(): Promise<void> {
+  const location = await locatePowerLog(settings.powerLogPath);
+  const path =
+    location?.path ?? expandEnvironmentVariables(settings.powerLogPath);
+  if (watcher?.path === path) {
+    return;
+  }
+
   watcher?.stop();
   parser.reset();
   currentSnapshot = undefined;
   currentAnalysis = undefined;
-  const path = expandEnvironmentVariables(settings.powerLogPath);
+  visualValidation = undefined;
+  logStatus = {
+    available: Boolean(location),
+    path,
+    message: location
+      ? `已发现 Power.log：${location.source}`
+      : "未找到 Power.log，请启动炉石并确认已手动启用日志。",
+  };
   watcher = new PowerLogWatcher(path, parser);
   watcher.on("status", (nextStatus) => {
     logStatus = nextStatus;
@@ -194,6 +223,7 @@ function startWatcher(): void {
     broadcastStatus();
   });
   watcher.start();
+  broadcastStatus();
 }
 
 async function analyzeCurrentState(): Promise<AppStatus> {
@@ -260,7 +290,7 @@ async function analyzeCurrentState(): Promise<AppStatus> {
 async function captureHearthstoneWindow() {
   const sources = await desktopCapturer.getSources({
     types: ["window"],
-    thumbnailSize: { width: 1920, height: 1080 },
+    thumbnailSize: { width: 2560, height: 1440 },
     fetchWindowIcons: false,
   });
   const source = sources.find((entry) => /hearthstone|炉石传说/i.test(entry.name));
@@ -299,6 +329,11 @@ function getStatus(): AppStatus {
   return {
     settings,
     log: logStatus,
+    catalog: {
+      ready: catalog.isReady(),
+      version: catalog.version,
+      entryCount: catalog.size(),
+    },
     snapshot: currentSnapshot,
     analysis: currentAnalysis,
     visualValidation,
@@ -317,10 +352,4 @@ function resolveCatalogPath(): string {
   const developmentPath = join(app.getAppPath(), "assets", "card-catalog.zhCN.json");
   const packagedPath = join(process.resourcesPath, "assets", "card-catalog.zhCN.json");
   return existsSync(developmentPath) ? developmentPath : packagedPath;
-}
-
-function expandEnvironmentVariables(path: string): string {
-  return path.replace(/%([^%]+)%/g, (_match, name: string) => {
-    return process.env[name] ?? process.env[name.toUpperCase()] ?? `%${name}%`;
-  });
 }

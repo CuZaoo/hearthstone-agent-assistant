@@ -1,0 +1,34 @@
+{
+  "cards": [
+    {
+      "id": "TEST_CARD_001",
+      "name": "测试法术",
+      "text": "造成一点伤害。",
+      "manaCost": 1,
+      "cardSetId": 100,
+      "cardTypeId": 5,
+      "collectible": 1
+    },
+    {
+      "id": "TEST_MINION_001",
+      "name": "测试随从",
+      "text": "",
+      "manaCost": 2,
+      "attack": 2,
+      "health": 3,
+      "cardSetId": 100,
+      "cardTypeId": 4,
+      "collectible": 1
+    },
+    {
+      "id": "OLD_CARD_001",
+      "name": "非标准卡牌",
+      "text": "",
+      "manaCost": 1,
+      "cardSetId": 99,
+      "cardTypeId": 5,
+      "collectible": 1
+    }
+  ]
+}
+

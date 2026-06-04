@@ -8,6 +8,7 @@ import type { CardCatalog } from "../core/card-catalog.js";
 interface Slot {
   entityId: number;
   cardId?: string;
+  kind: "hand" | "board";
   x: number;
   y: number;
   width: number;
@@ -39,15 +40,10 @@ export class VisualValidator {
     for (const slot of slots) {
       const expectedHash = catalog.get(slot.cardId)?.imageHash;
       if (!expectedHash) {
-        warnings.push(`实体 ${slot.entityId} 缺少视觉特征，无法校验。`);
+        errors.push(`实体 ${slot.entityId} 缺少视觉特征，无法校验。`);
         continue;
       }
-      const crop = screenshot.crop({
-        x: Math.max(0, Math.round(slot.x)),
-        y: Math.max(0, Math.round(slot.y)),
-        width: Math.max(1, Math.round(slot.width)),
-        height: Math.max(1, Math.round(slot.height)),
-      });
+      const crop = screenshot.crop(artRegion(slot));
       const actualHash = differenceHash(crop);
       if (hammingDistance(expectedHash, actualHash) <= 12) {
         matchedEntityIds.push(slot.entityId);
@@ -69,6 +65,19 @@ export class VisualValidator {
   }
 }
 
+function artRegion(slot: Slot) {
+  const horizontalInset = slot.kind === "hand" ? 0.18 : 0.15;
+  const topInset = slot.kind === "hand" ? 0.12 : 0.08;
+  const widthRatio = slot.kind === "hand" ? 0.64 : 0.7;
+  const heightRatio = slot.kind === "hand" ? 0.38 : 0.58;
+  return {
+    x: Math.max(0, Math.round(slot.x + slot.width * horizontalInset)),
+    y: Math.max(0, Math.round(slot.y + slot.height * topInset)),
+    width: Math.max(1, Math.round(slot.width * widthRatio)),
+    height: Math.max(1, Math.round(slot.height * heightRatio)),
+  };
+}
+
 function isSupportedResolution(width: number, height: number): boolean {
   const ratio = width / height;
   return Math.abs(ratio - 16 / 9) < 0.02 && width >= 1280 && height >= 720;
@@ -88,6 +97,7 @@ function buildSlots(
     slots.push({
       entityId: card.entityId,
       cardId: card.cardId,
+      kind: "hand",
       x: handStart + index * handGap - handWidth / 2,
       y: height * 0.81,
       width: handWidth,
@@ -114,6 +124,7 @@ function addBoardSlots(
     slots.push({
       entityId: card.entityId,
       cardId: card.cardId,
+      kind: "board",
       x: start + index * gap - cardWidth / 2,
       y: height * yRatio,
       width: cardWidth,
@@ -164,4 +175,3 @@ function hammingDistance(left: string, right: string): number {
   }
   return distance;
 }
-
