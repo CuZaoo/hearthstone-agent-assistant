@@ -33,4 +33,3 @@ contextBridge.exposeInMainWorld("hearthstoneAgent", {
     return () => ipcRenderer.removeListener(IPC.statusChanged, listener);
   },
 });
-
