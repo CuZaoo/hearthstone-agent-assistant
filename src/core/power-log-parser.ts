@@ -125,10 +125,12 @@ export class PowerLogParser {
     }
 
     const debugPlayer = line.match(DEBUG_PLAYER);
-    if (debugPlayer?.groups) {
+    const debugPlayerName = debugPlayer?.groups?.name;
+    const debugPlayerId = debugPlayer?.groups?.playerId;
+    if (debugPlayerName && debugPlayerId) {
       this.state.playerIdByName.set(
-        debugPlayer.groups.name.trim(),
-        Number(debugPlayer.groups.playerId),
+        debugPlayerName.trim(),
+        Number(debugPlayerId),
       );
       this.bumpRevision();
       return;
@@ -171,12 +173,14 @@ export class PowerLogParser {
     }
 
     const tag = line.match(TAG_LINE);
-    if (tag?.groups) {
+    const tagName = tag?.groups?.tag;
+    const tagValue = tag?.groups?.value;
+    if (tag?.groups && tagName && tagValue) {
       const entityId = this.entityIdFromGroups(tag.groups);
       if (entityId === undefined) {
         return;
       }
-      this.applyTag(entityId, tag.groups.tag, tag.groups.value, line);
+      this.applyTag(entityId, tagName, tagValue, line);
       this.state.currentEntityId = undefined;
       return;
     }
@@ -209,11 +213,17 @@ export class PowerLogParser {
     }
 
     const entityTag = line.match(ENTITY_TAG_LINE);
-    if (entityTag?.groups && this.state.currentEntityId !== undefined) {
+    const entityTagName = entityTag?.groups?.tag;
+    const entityTagValue = entityTag?.groups?.value;
+    if (
+      entityTagName &&
+      entityTagValue &&
+      this.state.currentEntityId !== undefined
+    ) {
       this.applyTag(
         this.state.currentEntityId,
-        entityTag.groups.tag,
-        entityTag.groups.value,
+        entityTagName,
+        entityTagValue,
         line,
       );
     }
@@ -224,7 +234,7 @@ export class PowerLogParser {
     const opponent = emptyPlayerState();
 
     for (const entity of this.state.entities.values()) {
-      const side = this.sideForController(entity.controller);
+      const side = this.sideForEntity(entity);
       if (!side) {
         continue;
       }
@@ -409,6 +419,13 @@ export class PowerLogParser {
       return undefined;
     }
     return this.sideForPlayerId(controller);
+  }
+
+  private sideForEntity(entity: EntityState): PlayerSide | undefined {
+    return (
+      this.sideForController(entity.controller) ??
+      this.sideForPlayerId(this.playerIdForEntity(entity.entityId))
+    );
   }
 
   private sideForPlayerId(playerId: number): PlayerSide | undefined {

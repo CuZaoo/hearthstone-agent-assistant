@@ -46,6 +46,15 @@ npm run package
 应用也会自动读取 Hearthstone Deck Tracker 的本地配置，并在炉石安装目录的
 `Logs\Hearthstone_日期时间\Power.log` 会话目录中切换到最新日志。
 
+无需安装项目依赖即可诊断现有日志：
+
+```powershell
+npm run log:diagnose -- `
+  --log "E:\Hearthstone\Logs\Hearthstone_日期时间\Power.log"
+```
+
+诊断命令直接调用应用中的 `PowerLogParser`，输出最近对局的模式、build、手牌和场面摘要。
+
 ## 卡牌快照
 
 `assets/card-catalog.zhCN.json` 当前是未配置占位文件。应用会阻止在缺少卡牌元数据或视觉特征时发起分析，避免输出不可靠建议。

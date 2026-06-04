@@ -16,11 +16,12 @@
     "catalog:import-hdt": "node scripts/import-hdt-carddefs.mjs",
     "catalog:validate": "node scripts/validate-card-catalog.mjs assets/card-catalog.zhCN.json",
     "features:build": "electron scripts/build-image-features.mjs",
+    "log:diagnose": "node --experimental-strip-types --loader ./scripts/ts-source-loader.mjs scripts/diagnose-power-log.mts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.main.json"
   },
   "dependencies": {
-    "better-sqlite3": "^11.8.1",
+    "better-sqlite3": "^12.10.0",
     "keytar": "^7.9.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
