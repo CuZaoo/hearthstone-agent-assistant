@@ -46,6 +46,10 @@ export class PowerLogWatcher extends EventEmitter<PowerLogWatcherEvents> {
     this.timer = setInterval(() => void this.poll(), this.intervalMs);
   }
 
+  async pollNow(): Promise<void> {
+    await this.poll();
+  }
+
   stop(): void {
     if (this.timer) {
       clearInterval(this.timer);

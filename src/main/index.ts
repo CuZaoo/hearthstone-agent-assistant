@@ -167,7 +167,10 @@ function registerShortcuts(): void {
 }
 
 function registerIpc(): void {
-  ipcMain.handle(IPC.getStatus, () => getStatus());
+  ipcMain.handle(IPC.getStatus, async () => {
+    await refreshCurrentLog();
+    return getStatus();
+  });
   ipcMain.handle(IPC.hasApiKey, () => credentialStore.getApiKey().then(Boolean));
   ipcMain.handle(IPC.listHistory, () => historyDatabase.listAnalyses());
   ipcMain.handle(IPC.analyze, () => analyzeCurrentState());
@@ -317,6 +320,7 @@ async function analyzeCurrentState(): Promise<AppStatus> {
 
   try {
     assertLiveRecommendationsEnabled();
+    await refreshCurrentLog();
     if (!currentSnapshot) {
       throw new Error("尚未从 Power.log 读取到有效局面。");
     }
@@ -405,6 +409,19 @@ async function analyzeCurrentState(): Promise<AppStatus> {
     broadcastStatus();
   }
   return getStatus();
+}
+
+async function refreshCurrentLog(): Promise<void> {
+  if (!watcher) {
+    return;
+  }
+  try {
+    await watcher.pollNow();
+  } catch (error) {
+    writeDiagnostic("power_log.refresh_failed", {
+      error: error instanceof Error ? error.message : "刷新 Power.log 失败。",
+    });
+  }
 }
 
 async function captureHearthstoneWindow() {

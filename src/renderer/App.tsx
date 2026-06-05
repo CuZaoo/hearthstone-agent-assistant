@@ -14,13 +14,31 @@ export function App() {
   const [bootError, setBootError] = useState<string>();
 
   useEffect(() => {
-    void window.hearthstoneAgent
-      .getStatus()
-      .then(setStatus)
-      .catch((error: unknown) =>
-        setBootError(error instanceof Error ? error.message : "启动失败"),
-      );
-    return window.hearthstoneAgent.onStatusChanged(setStatus);
+    let active = true;
+    const loadStatus = async () => {
+      try {
+        const nextStatus = await window.hearthstoneAgent.getStatus();
+        if (active) {
+          setStatus(nextStatus);
+        }
+      } catch (error: unknown) {
+        if (active) {
+          setBootError(error instanceof Error ? error.message : "启动失败");
+        }
+      }
+    };
+    void loadStatus();
+    const unsubscribe = window.hearthstoneAgent.onStatusChanged((nextStatus) => {
+      if (active) {
+        setStatus(nextStatus);
+      }
+    });
+    const timer = window.setInterval(() => void loadStatus(), 1_500);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+      unsubscribe();
+    };
   }, []);
 
   if (bootError) {

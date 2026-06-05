@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { appendFile, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -71,6 +71,21 @@ describe("PowerLogWatcher", () => {
     await internal.poll();
 
     expect(parser.snapshot("test").turn).toBe(7);
+  });
+
+  it("pollNow reads appended log data immediately", async () => {
+    const path = await createLog(`${createGameLine()}\n${turnLine(1)}\n`);
+    const parser = new PowerLogParser();
+    const watcher = new PowerLogWatcher(path, parser, 10_000);
+    watchers.push(watcher);
+
+    await watcher.pollNow();
+    expect(parser.snapshot("test").turn).toBe(1);
+
+    await appendFile(path, `${turnLine(4, "12:00:00.002")}\n`, "utf8");
+    await watcher.pollNow();
+
+    expect(parser.snapshot("test").turn).toBe(4);
   });
 });
 
