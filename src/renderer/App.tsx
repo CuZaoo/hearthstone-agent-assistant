@@ -59,9 +59,14 @@ function Dashboard({ status }: { status: AppStatus }) {
           <h1>炉石对局 Agent 助手</h1>
           <p>读取可见局面，校验后生成候选路线。不会操作游戏客户端。</p>
         </div>
-        <button className="primary" onClick={() => void window.hearthstoneAgent.analyze()}>
-          {status.busy ? "分析中…" : "分析当前局面"}
-        </button>
+        <div className="hero-actions">
+          <span className={status.busy ? "status-pill busy" : "status-pill"}>
+            {status.busy ? "处理中" : "待命"}
+          </span>
+          <button className="primary" onClick={() => void window.hearthstoneAgent.analyze()}>
+            {status.busy ? "分析中…" : "分析当前局面"}
+          </button>
+        </div>
       </header>
 
       <section className="status-grid">
