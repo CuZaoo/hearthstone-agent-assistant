@@ -73,6 +73,16 @@ const ANALYSIS_RESULT_SCHEMA = {
   },
 } as const;
 
+const CONNECTION_TEST_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["ok", "message"],
+  properties: {
+    ok: { type: "boolean" },
+    message: { type: "string" },
+  },
+} as const;
+
 export class AgentClient {
   constructor(
     private readonly settings: Pick<
@@ -82,6 +92,50 @@ export class AgentClient {
     private readonly apiKey: string,
     private readonly catalog: CardCatalog,
   ) {}
+
+  async testConnection(): Promise<string> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), this.settings.timeoutMs);
+    try {
+      const endpoint =
+        this.settings.transport === "responses"
+          ? "/v1/responses"
+          : "/v1/chat/completions";
+      const response = await fetch(joinUrl(this.settings.baseUrl, endpoint), {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${this.apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(
+          this.settings.transport === "responses"
+            ? responsesConnectionTestPayload(this.settings.model)
+            : chatCompletionsConnectionTestPayload(this.settings.model),
+        ),
+        signal: controller.signal,
+      });
+      if (!response.ok) {
+        throw new Error(`Agent 接口返回 HTTP ${response.status}。`);
+      }
+      const payload = (await response.json()) as unknown;
+      const text =
+        this.settings.transport === "responses"
+          ? extractResponsesText(payload)
+          : extractChatCompletionsText(payload);
+      const parsed = parseConnectionTestResult(text);
+      if (!parsed.ok) {
+        throw new Error(parsed.message || "Agent 连接测试未通过。");
+      }
+      return parsed.message;
+    } catch (error) {
+      if (error instanceof Error && error.name === "AbortError") {
+        throw new Error(`Agent 连接测试超过 ${this.settings.timeoutMs}ms。`);
+      }
+      throw error;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
 
   async analyze(request: AnalysisRequest): Promise<AnalysisResult> {
     const safeRequest: AnalysisRequest = {
@@ -167,6 +221,45 @@ export class AgentClient {
       clearTimeout(timer);
     }
   }
+}
+
+function responsesConnectionTestPayload(model: string): object {
+  return {
+    model,
+    instructions: "只返回 JSON，表示接口、模型和结构化输出可用。",
+    input: "返回 ok=true，message 使用简体中文，长度不超过 20 个字。",
+    max_output_tokens: 80,
+    text: {
+      format: {
+        type: "json_schema",
+        name: "agent_connection_test",
+        strict: true,
+        schema: CONNECTION_TEST_SCHEMA,
+      },
+    },
+  };
+}
+
+function chatCompletionsConnectionTestPayload(model: string): object {
+  return {
+    model,
+    messages: [
+      { role: "system", content: "只返回 JSON，表示接口、模型和结构化输出可用。" },
+      {
+        role: "user",
+        content: "返回 ok=true，message 使用简体中文，长度不超过 20 个字。",
+      },
+    ],
+    max_tokens: 80,
+    response_format: {
+      type: "json_schema",
+      json_schema: {
+        name: "agent_connection_test",
+        strict: true,
+        schema: CONNECTION_TEST_SCHEMA,
+      },
+    },
+  };
 }
 
 function responsesPayload(
@@ -269,6 +362,24 @@ function parseAnalysisResult(text: string): AnalysisResult {
     };
   } catch {
     throw new Error("Agent 返回了无效 JSON。");
+  }
+}
+
+function parseConnectionTestResult(text: string): {
+  ok: boolean;
+  message: string;
+} {
+  try {
+    const parsed = JSON.parse(text) as { ok?: unknown; message?: unknown };
+    if (typeof parsed.ok !== "boolean" || typeof parsed.message !== "string") {
+      throw new Error("Agent 连接测试返回结构无效。");
+    }
+    return { ok: parsed.ok, message: parsed.message };
+  } catch (error) {
+    if (error instanceof Error) {
+      throw error;
+    }
+    throw new Error("Agent 连接测试返回了无效 JSON。");
   }
 }
 

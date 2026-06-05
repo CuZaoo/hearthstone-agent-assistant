@@ -12,6 +12,7 @@ declare global {
       setApiKey(apiKey: string): Promise<boolean>;
       hasApiKey(): Promise<boolean>;
       analyze(): Promise<AppStatus>;
+      testAgentConnection(): Promise<AppStatus>;
       toggleOverlay(): Promise<AppStatus>;
       listHistory(): Promise<AnalysisResult[]>;
       onStatusChanged(callback: (status: AppStatus) => void): () => void;
@@ -20,4 +21,3 @@ declare global {
 }
 
 export {};
-

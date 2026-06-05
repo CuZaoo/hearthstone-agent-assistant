@@ -180,6 +180,9 @@ function Dashboard({ status }: { status: AppStatus }) {
           <button className="primary" onClick={() => void save()}>
             保存设置
           </button>
+          <button onClick={() => void window.hearthstoneAgent.testAgentConnection()}>
+            测试 Agent 连接
+          </button>
           <button onClick={() => void window.hearthstoneAgent.toggleOverlay()}>
             显示或隐藏悬浮窗
           </button>

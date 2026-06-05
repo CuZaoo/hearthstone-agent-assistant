@@ -57,6 +57,7 @@ const IPC = {
   setApiKey: "app:set-api-key",
   hasApiKey: "app:has-api-key",
   analyze: "app:analyze",
+  testAgentConnection: "app:test-agent-connection",
   toggleOverlay: "app:toggle-overlay",
   listHistory: "app:list-history",
   statusChanged: "app:status-changed",
@@ -162,6 +163,7 @@ function registerIpc(): void {
   ipcMain.handle(IPC.hasApiKey, () => credentialStore.getApiKey().then(Boolean));
   ipcMain.handle(IPC.listHistory, () => historyDatabase.listAnalyses());
   ipcMain.handle(IPC.analyze, () => analyzeCurrentState());
+  ipcMain.handle(IPC.testAgentConnection, () => testAgentConnection());
   ipcMain.handle(IPC.toggleOverlay, () => toggleOverlay());
   ipcMain.handle(IPC.setApiKey, async (_event, apiKey: string) => {
     await credentialStore.setApiKey(apiKey);
@@ -232,6 +234,44 @@ async function refreshWatcher(): Promise<void> {
   });
   watcher.start();
   broadcastStatus();
+}
+
+async function testAgentConnection(): Promise<AppStatus> {
+  if (busy) {
+    return getStatus();
+  }
+  busy = true;
+  statusMessage = "正在测试 Agent 连接…";
+  broadcastStatus();
+
+  try {
+    const apiKey = await credentialStore.getApiKey();
+    if (!apiKey) {
+      throw new Error("尚未配置 Agent API Key。");
+    }
+    if (!settings.model) {
+      throw new Error("尚未配置 Agent 模型名称。");
+    }
+    const client = new AgentClient(
+      {
+        baseUrl: settings.baseUrl,
+        model: settings.model,
+        transport: settings.transport,
+        timeoutMs: settings.timeoutMs,
+      },
+      apiKey,
+      catalog,
+    );
+    const message = await client.testConnection();
+    statusMessage = `Agent 连接测试通过：${message}`;
+  } catch (error) {
+    statusMessage =
+      error instanceof Error ? error.message : "Agent 连接测试失败。";
+  } finally {
+    busy = false;
+    broadcastStatus();
+  }
+  return getStatus();
 }
 
 async function analyzeCurrentState(): Promise<AppStatus> {

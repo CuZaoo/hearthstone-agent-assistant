@@ -11,6 +11,7 @@ const IPC = {
   setApiKey: "app:set-api-key",
   hasApiKey: "app:has-api-key",
   analyze: "app:analyze",
+  testAgentConnection: "app:test-agent-connection",
   toggleOverlay: "app:toggle-overlay",
   listHistory: "app:list-history",
   statusChanged: "app:status-changed",
@@ -24,6 +25,8 @@ contextBridge.exposeInMainWorld("hearthstoneAgent", {
     ipcRenderer.invoke(IPC.setApiKey, apiKey),
   hasApiKey: (): Promise<boolean> => ipcRenderer.invoke(IPC.hasApiKey),
   analyze: (): Promise<AppStatus> => ipcRenderer.invoke(IPC.analyze),
+  testAgentConnection: (): Promise<AppStatus> =>
+    ipcRenderer.invoke(IPC.testAgentConnection),
   toggleOverlay: (): Promise<AppStatus> => ipcRenderer.invoke(IPC.toggleOverlay),
   listHistory: (): Promise<AnalysisResult[]> => ipcRenderer.invoke(IPC.listHistory),
   onStatusChanged: (callback: (status: AppStatus) => void): (() => void) => {

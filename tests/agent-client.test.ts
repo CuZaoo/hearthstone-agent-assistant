@@ -38,6 +38,42 @@ describe("AgentClient", () => {
     const repairBody = String(fetchMock.mock.calls[1]?.[1]?.body);
     expect(repairBody).toContain("不可用的己方实体");
   });
+
+  it("tests responses transport with structured output", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(responseFor({ ok: true, message: "连接正常" }));
+    const client = new AgentClient(settings, "secret-key", catalog);
+
+    await expect(client.testConnection()).resolves.toBe("连接正常");
+
+    const body = String(fetchMock.mock.calls[0]?.[1]?.body);
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("https://example.test/v1/responses");
+    expect(body).toContain("agent_connection_test");
+    expect(body).not.toContain("secret-key");
+  });
+
+  it("tests chat completions transport with structured output", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(
+        chatResponseFor({ ok: true, message: "连接正常" }),
+      );
+    const client = new AgentClient(
+      { ...settings, transport: "chat-completions" },
+      "secret-key",
+      catalog,
+    );
+
+    await expect(client.testConnection()).resolves.toBe("连接正常");
+
+    const body = String(fetchMock.mock.calls[0]?.[1]?.body);
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      "https://example.test/v1/chat/completions",
+    );
+    expect(body).toContain("agent_connection_test");
+    expect(body).not.toContain("secret-key");
+  });
 });
 
 const settings = {
@@ -157,6 +193,18 @@ function responseFor(result: object): Response {
   return new Response(
     JSON.stringify({
       output_text: JSON.stringify(result),
+    }),
+    {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    },
+  );
+}
+
+function chatResponseFor(result: object): Response {
+  return new Response(
+    JSON.stringify({
+      choices: [{ message: { content: JSON.stringify(result) } }],
     }),
     {
       status: 200,
