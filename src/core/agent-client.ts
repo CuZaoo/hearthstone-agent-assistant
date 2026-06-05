@@ -18,6 +18,9 @@ const SYSTEM_PROMPT = `你是炉石传说标准构筑对局分析助手。
 你只能使用请求中明确提供的可见信息，不得假设对手手牌、牌库顺序或随机结果。
 你的目标是提供当前回合的高质量候选路线，不得声称路线是数学最优。
 每条路线必须引用请求中存在的实体 ID，并说明理由、主要风险与置信度。
+sourceCardId 必须与 sourceEntityId 对应实体的 cardId 完全一致；end-turn 不得携带来源或目标。
+description 只描述动作本身，例如“打出神圣新星”或“卡多雷女祭司攻击敌方英雄”，不得把法术写成战吼，不得编造卡牌文本外的效果。
+如果某条路线无法满足实体、费用、攻击、目标和场面容量约束，就不要返回这条路线。
 只返回一个 JSON 对象，不要 Markdown，不要代码块，不要解释性前后缀。`;
 
 const ANALYSIS_RESULT_SCHEMA = {
@@ -401,7 +404,7 @@ function buildUserContent(
 ): string {
   const repair =
     repairErrors.length > 0
-      ? `\n上一次结果存在以下错误，请修复：${repairErrors.join("；")}`
+      ? `\n上一次结果存在以下错误，请修复或删除相关路线：${repairErrors.join("；")}`
       : "";
   const schema =
     mode === "json_object"
@@ -433,7 +436,13 @@ function buildUserContent(
 }
 不要返回格式定义，不要解释字段含义，只返回本局分析结果。`
       : "";
-  return `分析以下结构化局面，最多返回 ${request.maxCandidates} 条候选路线。${repair}${schema}\n${JSON.stringify(request)}`;
+  return `分析以下结构化局面，最多返回 ${request.maxCandidates} 条候选路线。
+硬性规则：
+- 只能使用 snapshot.self.hand、snapshot.self.board、snapshot.self.hero、snapshot.self.heroPower 中存在的己方 sourceEntityId。
+- play-card 必须来自 self.hand；attack 必须来自可攻击的 self.board 或英雄；hero-power 只能使用 self.heroPower。
+- sourceCardId 必须等于该 sourceEntityId 的 cardId；没有 cardId 时填 null。
+- description 不要复述或改写不存在的效果标签，只写卡名、动作和目标。
+${repair}${schema}\n${JSON.stringify(request)}`;
 }
 
 function extractResponsesText(payload: unknown): string {

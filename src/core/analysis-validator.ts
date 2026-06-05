@@ -91,7 +91,7 @@ export function validateAnalysisResult(
     let boardCount = snapshot.self.board.length;
     const usedSourceIds = new Set<number>();
     for (const [actionIndex, action] of candidate.actions.entries()) {
-      validateAction(action, snapshot, catalog, errors, warnings);
+      validateAction(action, snapshot, errors, warnings);
       if (
         action.sourceEntityId !== undefined &&
         action.type !== "attack" &&
@@ -151,7 +151,6 @@ export function validateAnalysisResult(
 function validateAction(
   action: RecommendedAction,
   snapshot: GameStateSnapshot,
-  catalog: CardCatalog,
   errors: string[],
   warnings: string[],
 ): void {
@@ -204,14 +203,17 @@ function validateAction(
   ) {
     errors.push(`目标实体 ${action.targetEntityId} 不属于对手。`);
   }
-  if (action.sourceCardId && !catalog.has(action.sourceCardId)) {
-    errors.push(`动作引用了卡牌快照中不存在的卡牌 ${action.sourceCardId}。`);
+  const source =
+    action.sourceEntityId === undefined
+      ? undefined
+      : ownEntities.find((entity) => entity.entityId === action.sourceEntityId);
+  if (action.sourceCardId && !source) {
+    errors.push(`动作携带了卡牌 ${action.sourceCardId}，但没有可用的来源实体。`);
   }
-  if (action.sourceEntityId !== undefined && action.sourceCardId) {
-    const source = ownEntities.find(
-      (entity) => entity.entityId === action.sourceEntityId,
-    );
-    if (source && "cardId" in source && source.cardId !== action.sourceCardId) {
+  if (source && "cardId" in source && source.cardId) {
+    if (!action.sourceCardId && action.type !== "hero-power") {
+      errors.push(`动作的实体 ${action.sourceEntityId} 必须携带卡牌 ID ${source.cardId}。`);
+    } else if (action.sourceCardId && source.cardId !== action.sourceCardId) {
       errors.push(
         `动作的实体 ${action.sourceEntityId} 与卡牌 ${action.sourceCardId} 不匹配。`,
       );

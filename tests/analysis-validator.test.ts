@@ -160,6 +160,78 @@ describe("validateAnalysisResult", () => {
 
     expect(validateAnalysisResult(result, snapshot, catalog).ok).toBe(false);
   });
+
+  it("rejects playable actions without the matching source card id", () => {
+    const result: AnalysisResult = {
+      snapshotRevision: "1",
+      summary: "缺少卡牌 ID",
+      warnings: [],
+      candidates: [
+        {
+          rank: 1,
+          actions: [
+            {
+              type: "play-card",
+              sourceEntityId: 10,
+              description: "打出测试卡",
+            },
+          ],
+          rationale: "",
+          risks: [],
+          confidence: 0.5,
+        },
+      ],
+    };
+
+    const report = validateAnalysisResult(result, snapshot, catalog);
+
+    expect(report.ok).toBe(false);
+    expect(report.errors.join(" ")).toContain("必须携带卡牌 ID CARD_001");
+  });
+
+  it("allows hero power source card ids that are absent from the card catalog", () => {
+    const result: AnalysisResult = {
+      snapshotRevision: "1",
+      summary: "英雄技能",
+      warnings: [],
+      candidates: [
+        {
+          rank: 1,
+          actions: [
+            {
+              type: "hero-power",
+              sourceEntityId: 30,
+              sourceCardId: "HERO_POWER_NOT_IN_CATALOG",
+              description: "使用英雄技能",
+            },
+          ],
+          rationale: "",
+          risks: [],
+          confidence: 0.5,
+        },
+      ],
+    };
+
+    const report = validateAnalysisResult(
+      result,
+      {
+        ...snapshot,
+        self: {
+          ...snapshot.self,
+          mana: 2,
+          heroPower: {
+            entityId: 30,
+            cardId: "HERO_POWER_NOT_IN_CATALOG",
+            cost: 2,
+            tags: {},
+          },
+        },
+      },
+      catalog,
+    );
+
+    expect(report.ok).toBe(true);
+  });
 });
 
 describe("validateSnapshotForAnalysis", () => {
