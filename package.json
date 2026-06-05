@@ -44,7 +44,8 @@
     "appId": "com.wang.hearthstone-agent-assistant",
     "productName": "炉石对局 Agent 助手",
     "files": [
-      "dist/**/*",
+      "dist/main/**/*",
+      "dist/renderer/**/*",
       "package.json"
     ],
     "extraResources": [

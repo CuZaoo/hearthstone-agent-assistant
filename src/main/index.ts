@@ -13,6 +13,7 @@ import { validateSnapshotForAnalysis } from "../core/analysis-validator.js";
 import { CardCatalog } from "../core/card-catalog.js";
 import { PowerLogParser } from "../core/power-log-parser.js";
 import { PowerLogWatcher } from "../core/power-log-watcher.js";
+import { enrichSnapshotWithCatalog } from "../core/snapshot-enricher.js";
 import type {
   AnalysisResult,
   AppSettings,
@@ -213,7 +214,10 @@ async function refreshWatcher(): Promise<void> {
     broadcastStatus();
   });
   watcher.on("change", () => {
-    const next = parser.snapshot(catalog.version);
+    const next = enrichSnapshotWithCatalog(
+      parser.snapshot(catalog.version),
+      catalog,
+    );
     if (currentAnalysis && currentAnalysis.snapshotRevision !== next.revision) {
       currentAnalysis = { ...currentAnalysis, stale: true };
     }

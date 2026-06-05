@@ -37,6 +37,25 @@ describe("PowerLogParser", () => {
     expect(parser.snapshot("test-catalog").revision).toBe(firstRevision);
   });
 
+  it("does not deduplicate identical block boundaries", () => {
+    const parser = new PowerLogParser();
+
+    parser.consumeLine(
+      "D 12:00:00.001 GameState.DebugPrintPower() - BLOCK_START BlockType=TRIGGER Entity=GameEntity",
+    );
+    parser.consumeLine(
+      "D 12:00:00.002 GameState.DebugPrintPower() - BLOCK_START BlockType=TRIGGER Entity=GameEntity",
+    );
+    parser.consumeLine(
+      "D 12:00:00.003 GameState.DebugPrintPower() - BLOCK_END",
+    );
+    parser.consumeLine(
+      "D 12:00:00.003 GameState.DebugPrintPower() - BLOCK_END",
+    );
+
+    expect(parser.snapshot("test-catalog").animationPending).toBe(false);
+  });
+
   it("ignores Power.log tags that cannot affect the visible snapshot", () => {
     const parser = new PowerLogParser();
 

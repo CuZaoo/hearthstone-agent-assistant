@@ -130,6 +130,19 @@ export class PowerLogParser {
       }
     }
 
+    if (BLOCK_START.test(line)) {
+      this.state.currentEntityId = undefined;
+      this.state.animationDepth += 1;
+      this.bumpRevision();
+      return;
+    }
+    if (BLOCK_END.test(line)) {
+      this.state.currentEntityId = undefined;
+      this.state.animationDepth = Math.max(0, this.state.animationDepth - 1);
+      this.bumpRevision();
+      return;
+    }
+
     const eventId = createHash("sha1").update(line).digest("hex");
     if (this.state.processedEventIds.has(eventId)) {
       return;
@@ -167,19 +180,6 @@ export class PowerLogParser {
         debugPlayerName.trim(),
         Number(debugPlayerId),
       );
-      this.bumpRevision();
-      return;
-    }
-
-    if (BLOCK_START.test(line)) {
-      this.state.currentEntityId = undefined;
-      this.state.animationDepth += 1;
-      this.bumpRevision();
-      return;
-    }
-    if (BLOCK_END.test(line)) {
-      this.state.currentEntityId = undefined;
-      this.state.animationDepth = Math.max(0, this.state.animationDepth - 1);
       this.bumpRevision();
       return;
     }
