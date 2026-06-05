@@ -28,7 +28,9 @@ export class VisualValidator {
     const matchedEntityIds: number[] = [];
 
     if (!isSupportedResolution(size.width, size.height)) {
-      errors.push(`不支持的截图分辨率 ${resolution}，首版仅支持 16:9。`);
+      errors.push(
+        `不支持的截图分辨率 ${resolution}，首版仅支持 1920×1080 或 2560×1440。`,
+      );
       return { ok: false, errors, warnings, resolution, matchedEntityIds };
     }
     if (!catalog.isReady()) {
@@ -79,8 +81,10 @@ function artRegion(slot: Slot) {
 }
 
 function isSupportedResolution(width: number, height: number): boolean {
-  const ratio = width / height;
-  return Math.abs(ratio - 16 / 9) < 0.02 && width >= 1280 && height >= 720;
+  return (
+    (width === 1920 && height === 1080) ||
+    (width === 2560 && height === 1440)
+  );
 }
 
 function buildSlots(

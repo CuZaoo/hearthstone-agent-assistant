@@ -1,9 +1,17 @@
 import { EventEmitter } from "node:events";
 import { open, stat } from "node:fs/promises";
+import type { FileHandle } from "node:fs/promises";
 import type { Stats } from "node:fs";
 import { StringDecoder } from "node:string_decoder";
 import type { LogStatus } from "../shared/types.js";
 import { PowerLogParser } from "./power-log-parser.js";
+
+const READ_CHUNK_SIZE = 1024 * 1024;
+const INITIAL_FAST_FORWARD_THRESHOLD = 8 * 1024 * 1024;
+const INITIAL_SCAN_CHUNK_SIZE = 4 * 1024 * 1024;
+const GAME_START_MARKER = Buffer.from(
+  "GameState.DebugPrintPower() - CREATE_GAME",
+);
 
 export interface PowerLogWatcherEvents {
   status: [LogStatus];
@@ -12,11 +20,13 @@ export interface PowerLogWatcherEvents {
 }
 
 export class PowerLogWatcher extends EventEmitter<PowerLogWatcherEvents> {
-  private static readonly READ_CHUNK_SIZE = 1024 * 1024;
   private timer?: NodeJS.Timeout;
+  private polling = false;
   private offset = 0;
   private lastSize = 0;
   private lastModifiedMs = 0;
+  private lastBirthtimeMs = 0;
+  private lastInode = 0;
   private carry = "";
   private decoder = new StringDecoder("utf8");
 
@@ -44,6 +54,10 @@ export class PowerLogWatcher extends EventEmitter<PowerLogWatcherEvents> {
   }
 
   private async poll(): Promise<void> {
+    if (this.polling) {
+      return;
+    }
+    this.polling = true;
     try {
       const fileStats = await stat(this.path);
       await this.handleStats(fileStats);
@@ -58,11 +72,17 @@ export class PowerLogWatcher extends EventEmitter<PowerLogWatcherEvents> {
         return;
       }
       this.emit("error", error as Error);
+    } finally {
+      this.polling = false;
     }
   }
 
   private async handleStats(fileStats: Stats): Promise<void> {
+    const replaced =
+      (this.lastBirthtimeMs > 0 && fileStats.birthtimeMs !== this.lastBirthtimeMs) ||
+      (this.lastInode > 0 && fileStats.ino > 0 && fileStats.ino !== this.lastInode);
     const rotated =
+      replaced ||
       fileStats.size < this.offset ||
       (this.lastModifiedMs > 0 && fileStats.mtimeMs < this.lastModifiedMs);
     if (rotated) {
@@ -76,9 +96,16 @@ export class PowerLogWatcher extends EventEmitter<PowerLogWatcherEvents> {
       const file = await open(this.path, "r");
       try {
         let position = this.offset;
+        if (
+          position === 0 &&
+          fileStats.size > INITIAL_FAST_FORWARD_THRESHOLD
+        ) {
+          position = await findLatestGameStart(file, fileStats.size);
+          this.offset = position;
+        }
         while (position < fileStats.size) {
           const length = Math.min(
-            PowerLogWatcher.READ_CHUNK_SIZE,
+            READ_CHUNK_SIZE,
             fileStats.size - position,
           );
           const buffer = Buffer.alloc(length);
@@ -102,6 +129,8 @@ export class PowerLogWatcher extends EventEmitter<PowerLogWatcherEvents> {
 
     this.lastSize = fileStats.size;
     this.lastModifiedMs = fileStats.mtimeMs;
+    this.lastBirthtimeMs = fileStats.birthtimeMs;
+    this.lastInode = fileStats.ino;
     this.emit("status", {
       available: true,
       path: this.path,
@@ -109,4 +138,41 @@ export class PowerLogWatcher extends EventEmitter<PowerLogWatcherEvents> {
       lastEventAt: new Date(fileStats.mtimeMs).toISOString(),
     });
   }
+
+}
+
+export async function findLatestGameStart(
+  file: FileHandle,
+  fileSize: number,
+): Promise<number> {
+  const marker = GAME_START_MARKER;
+  let searchEnd = fileSize;
+  let suffix = Buffer.alloc(0);
+
+  while (searchEnd > 0) {
+    const length = Math.min(
+      INITIAL_SCAN_CHUNK_SIZE,
+      searchEnd,
+    );
+    const start = searchEnd - length;
+    const buffer = Buffer.alloc(length);
+    const { bytesRead } = await file.read(buffer, 0, length, start);
+    const window = Buffer.concat([
+      buffer.subarray(0, bytesRead),
+      suffix,
+    ]);
+    const markerIndex = window.lastIndexOf(marker);
+    if (markerIndex !== -1) {
+      return start + lineStartOffset(window, markerIndex);
+    }
+    suffix = window.subarray(0, Math.min(marker.length - 1, window.length));
+    searchEnd = start;
+  }
+
+  return 0;
+}
+
+function lineStartOffset(buffer: Buffer, offset: number): number {
+  const newline = buffer.lastIndexOf(0x0a, offset);
+  return newline === -1 ? 0 : newline + 1;
 }

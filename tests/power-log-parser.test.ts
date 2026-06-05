@@ -37,6 +37,16 @@ describe("PowerLogParser", () => {
     expect(parser.snapshot("test-catalog").revision).toBe(firstRevision);
   });
 
+  it("ignores Power.log tags that cannot affect the visible snapshot", () => {
+    const parser = new PowerLogParser();
+
+    parser.consumeLine(
+      "D 12:00:00.001 GameState.DebugPrintPower() - TAG_CHANGE Entity=1 tag=INTERNAL_TEST_TAG value=1",
+    );
+
+    expect(parser.snapshot("test-catalog").revision).toBe("0");
+  });
+
   it("parses attached entity tags and maps player entity IDs to controller IDs", () => {
     const parser = new PowerLogParser();
     const fixture = readFileSync(

@@ -35,7 +35,18 @@ describe("VisualValidator", () => {
     );
 
     expect(report.ok).toBe(false);
-    expect(report.errors.join(" ")).toContain("16:9");
+    expect(report.errors.join(" ")).toContain("1920×1080");
+  });
+
+  it("rejects unlisted 16:9 resolutions", () => {
+    const report = new VisualValidator().validate(
+      new FakeImage(1280, 720) as never,
+      snapshot,
+      catalogWithHash("0000000000000000"),
+    );
+
+    expect(report.ok).toBe(false);
+    expect(report.errors.join(" ")).toContain("2560×1440");
   });
 });
 
@@ -106,4 +117,3 @@ const snapshot: GameStateSnapshot = {
   animationPending: false,
   capturedAt: "2026-01-01T00:00:00.000Z",
 };
-

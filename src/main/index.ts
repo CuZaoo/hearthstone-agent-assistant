@@ -135,6 +135,13 @@ function createWindows(): void {
     },
   });
   overlayWindow.setIgnoreMouseEvents(true);
+  mainWindow.on("closed", () => {
+    mainWindow = undefined;
+    app.quit();
+  });
+  overlayWindow.on("closed", () => {
+    overlayWindow = undefined;
+  });
 
   if (rendererUrl) {
     void mainWindow.loadURL(rendererUrl);
@@ -210,6 +217,7 @@ async function refreshWatcher(): Promise<void> {
     if (currentAnalysis && currentAnalysis.snapshotRevision !== next.revision) {
       currentAnalysis = { ...currentAnalysis, stale: true };
     }
+    visualValidation = undefined;
     currentSnapshot = next;
     historyDatabase.saveSnapshot(next);
     broadcastStatus();
@@ -240,7 +248,8 @@ async function analyzeCurrentState(): Promise<AppStatus> {
     if (!currentSnapshot) {
       throw new Error("尚未从 Power.log 读取到有效局面。");
     }
-    const snapshotReport = validateSnapshotForAnalysis(currentSnapshot, catalog);
+    const snapshot = currentSnapshot;
+    const snapshotReport = validateSnapshotForAnalysis(snapshot, catalog);
     if (!snapshotReport.ok) {
       throw new Error(snapshotReport.errors.join("；"));
     }
@@ -248,11 +257,14 @@ async function analyzeCurrentState(): Promise<AppStatus> {
     const screenshot = await captureHearthstoneWindow();
     visualValidation = new VisualValidator().validate(
       screenshot,
-      currentSnapshot,
+      snapshot,
       catalog,
     );
     if (!visualValidation.ok) {
       throw new Error(visualValidation.errors.join("；"));
+    }
+    if (currentSnapshot?.revision !== snapshot.revision) {
+      throw new Error("视觉校验期间局面已发生变化，请重新分析。");
     }
 
     const apiKey = await credentialStore.getApiKey();
@@ -279,9 +291,9 @@ async function analyzeCurrentState(): Promise<AppStatus> {
       apiKey,
       catalog,
     );
-    const requestedRevision = currentSnapshot.revision;
+    const requestedRevision = snapshot.revision;
     const result = await client.analyze({
-      snapshot: currentSnapshot,
+      snapshot,
       objective: "recommend-current-turn",
       maxCandidates: settings.maxCandidates,
     });
@@ -359,8 +371,12 @@ function getStatus(): AppStatus {
 
 function broadcastStatus(): void {
   const status = getStatus();
-  mainWindow?.webContents.send(IPC.statusChanged, status);
-  overlayWindow?.webContents.send(IPC.statusChanged, status);
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send(IPC.statusChanged, status);
+  }
+  if (overlayWindow && !overlayWindow.isDestroyed()) {
+    overlayWindow.webContents.send(IPC.statusChanged, status);
+  }
 }
 
 function resolveCatalogPath(): string {

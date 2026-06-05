@@ -66,6 +66,37 @@ const BLOCK_START = /BLOCK_START BlockType=(?<type>[A-Z_]+)/;
 const BLOCK_END = /BLOCK_END/;
 const CREATE_GAME = /CREATE_GAME/;
 const TIMESTAMP = /^D\s+(?<time>\d{2}:\d{2}:\d{2}\.\d+)\s+/;
+const RELEVANT_TAGS = new Set([
+  "ARMOR",
+  "ATK",
+  "CARDTYPE",
+  "CONTROLLER",
+  "COST",
+  "CURRENT_PLAYER",
+  "DAMAGE",
+  "DECK_COUNT",
+  "DIVINE_SHIELD",
+  "DORMANT",
+  "DURABILITY",
+  "EXHAUSTED",
+  "FATIGUE",
+  "FORMAT_TYPE",
+  "HEALTH",
+  "LIFESTEAL",
+  "OVERLOAD_LOCKED",
+  "PLAYER_ID",
+  "PLAYSTATE",
+  "POISONOUS",
+  "RESOURCES",
+  "RESOURCES_USED",
+  "SECRET",
+  "TAUNT",
+  "TEMP_RESOURCES",
+  "TRADEABLE",
+  "TURN",
+  "ZONE",
+  "ZONE_POSITION",
+]);
 
 export class PowerLogParser {
   private state: ParserState = this.newState();
@@ -87,6 +118,10 @@ export class PowerLogParser {
   }
 
   consumeLine(line: string): void {
+    if (!isRelevantPowerLine(line)) {
+      return;
+    }
+
     if (CREATE_GAME.test(line)) {
       const timestamp = line.match(TIMESTAMP)?.groups?.time;
       if (!timestamp || timestamp !== this.lastCreateGameTimestamp) {
@@ -634,6 +669,23 @@ function isVisibleEventTag(tag: string): boolean {
     "RESOURCES",
     "OVERLOAD_LOCKED",
   ].includes(tag);
+}
+
+function isRelevantPowerLine(line: string): boolean {
+  if (
+    !line.includes("DebugPrintPower()") &&
+    !line.includes("DebugPrintGame()")
+  ) {
+    return false;
+  }
+  const tagStart = line.indexOf(" tag=");
+  if (tagStart === -1) {
+    return true;
+  }
+  const valueStart = tagStart + 5;
+  const valueEnd = line.indexOf(" ", valueStart);
+  const tag = line.slice(valueStart, valueEnd === -1 ? undefined : valueEnd);
+  return RELEVANT_TAGS.has(tag);
 }
 
 function byZonePosition(a: CardReference, b: CardReference): number {
