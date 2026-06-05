@@ -8,4 +8,5 @@ local-data/
 *.db-shm
 *.db-wal
 .env
+.idea/
 .DS_Store

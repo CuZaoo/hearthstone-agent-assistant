@@ -37,14 +37,30 @@ npm test
 npm run dev
 ```
 
-实战联调不需要每次打包。修改主进程、解析器、卡牌快照或视觉校验后，使用源码版启动：
+实战联调用 `npm run dev`。它会同时启动 Vite、主进程 TypeScript watch 和
+Electron；主进程重新编译后会自动重启 Electron，比打包快。
+
+如果只想运行已经构建好的源码版：
 
 ```powershell
 npm run build
 npm run start:built
 ```
 
-源码版会读取工作区内的 `assets` 和 `dist`，适合边打炉石边快速验证。
+调试日志写入：
+
+```text
+%APPDATA%\hearthstone-agent-assistant\diagnostics.jsonl
+```
+
+查看最近分析流程：
+
+```powershell
+Get-Content "$env:APPDATA\hearthstone-agent-assistant\diagnostics.jsonl" -Tail 80
+```
+
+日志包含 Power.log 快照摘要、视觉校验、Agent 原始回复、解析错误和本地校验错误；
+不会记录 API Key 或截图。
 
 生成 Windows 测试安装器：
 

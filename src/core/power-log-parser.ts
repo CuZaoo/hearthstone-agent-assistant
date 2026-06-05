@@ -66,6 +66,9 @@ const BLOCK_START = /BLOCK_START BlockType=(?<type>[A-Z_]+)/;
 const BLOCK_END = /BLOCK_END/;
 const CREATE_GAME = /CREATE_GAME/;
 const TIMESTAMP = /^D\s+(?<time>\d{2}:\d{2}:\d{2}\.\d+)\s+/;
+const ENTITY_DESCRIPTION =
+  /entityName=(?<name>.+?) id=(?<id>\d+) zone=(?<zone>[A-Z]+) zonePos=(?<zonePosition>\d+) cardId=(?<cardId>[A-Za-z0-9_]*) player=(?<controller>\d+)/g;
+const UNKNOWN_ENTITY_NAME = /^UNKNOWN ENTITY\b/;
 const RELEVANT_TAGS = new Set([
   "ARMOR",
   "ATK",
@@ -118,7 +121,13 @@ export class PowerLogParser {
   }
 
   consumeLine(line: string): void {
+    const metadataChanged = shouldReadEntityDescriptionMetadata(line)
+      ? this.consumeEntityDescriptions(line)
+      : false;
     if (!isRelevantPowerLine(line)) {
+      if (metadataChanged) {
+        this.bumpRevision();
+      }
       return;
     }
 
@@ -510,20 +519,60 @@ export class PowerLogParser {
     if (idMatch?.[1]) {
       const id = Number(idMatch[1]);
       const entity = this.getEntity(id);
-      entity.name ??= source.match(/entityName=([^\]]+?)(?:\s+id=|$)/)?.[1];
-      entity.cardId ??= source.match(/cardId=([A-Za-z0-9_]+)/)?.[1];
-      entity.zone ??= source.match(/zone=([A-Z]+)/)?.[1];
-      const zonePosition = source.match(/zonePos=(\d+)/)?.[1];
-      const controller = source.match(/player=(\d+)/)?.[1];
-      if (zonePosition !== undefined) {
-        entity.zonePosition ??= Number(zonePosition);
-      }
-      if (controller !== undefined) {
-        entity.controller ??= Number(controller);
-      }
+      this.mergeEntityDescription(entity, source);
       return id;
     }
     return undefined;
+  }
+
+  private consumeEntityDescriptions(line: string): boolean {
+    if (!line.includes("entityName=")) {
+      return false;
+    }
+
+    let changed = false;
+    for (const match of line.matchAll(ENTITY_DESCRIPTION)) {
+      const id = Number(match.groups?.id);
+      if (!Number.isFinite(id)) {
+        continue;
+      }
+      const entity = this.getEntity(id);
+      changed = this.mergeEntityDescription(entity, match[0]) || changed;
+    }
+    return changed;
+  }
+
+  private mergeEntityDescription(entity: EntityState, source: string): boolean {
+    const previous = { ...entity };
+    const name = source.match(/entityName=(.+?) id=\d+/)?.[1]?.trim();
+    const cardId = source.match(/cardId=([A-Za-z0-9_]*)/)?.[1];
+    const zone = source.match(/zone=([A-Z]+)/)?.[1];
+    const zonePosition = source.match(/zonePos=(\d+)/)?.[1];
+    const controller = source.match(/player=(\d+)/)?.[1];
+
+    if (name && shouldReplaceName(entity.name, name)) {
+      entity.name = name;
+    }
+    if (cardId) {
+      entity.cardId = cardId;
+    }
+    if (zone && entity.zone === undefined) {
+      entity.zone = zone;
+    }
+    if (zonePosition !== undefined && entity.zonePosition === undefined) {
+      entity.zonePosition = Number(zonePosition);
+    }
+    if (controller !== undefined && entity.controller === undefined) {
+      entity.controller = Number(controller);
+    }
+
+    return (
+      previous.name !== entity.name ||
+      previous.cardId !== entity.cardId ||
+      previous.zone !== entity.zone ||
+      previous.zonePosition !== entity.zonePosition ||
+      previous.controller !== entity.controller
+    );
   }
 
   private toCardReference(entity: EntityState): CardReference {
@@ -696,6 +745,17 @@ function isRelevantPowerLine(line: string): boolean {
   return RELEVANT_TAGS.has(tag);
 }
 
+function shouldReadEntityDescriptionMetadata(line: string): boolean {
+  return (
+    line.includes("TAG_CHANGE Entity=[") ||
+    line.includes("SHOW_ENTITY - Updating Entity=[") ||
+    line.includes("FULL_ENTITY - Updating [") ||
+    (line.includes("DebugPrintOptions()") &&
+      line.includes("mainEntity=[") &&
+      line.includes(" zone=HAND "))
+  );
+}
+
 function byZonePosition(a: CardReference, b: CardReference): number {
   return (a.zonePosition ?? 0) - (b.zonePosition ?? 0);
 }
@@ -705,4 +765,8 @@ function isCardType(entity: EntityState, name: string, numericValue: number): bo
     String(entity.tags.CARDTYPE) === name ||
     Number(entity.tags.CARDTYPE) === numericValue
   );
+}
+
+function shouldReplaceName(current: string | undefined, next: string): boolean {
+  return !current || (UNKNOWN_ENTITY_NAME.test(current) && !UNKNOWN_ENTITY_NAME.test(next));
 }

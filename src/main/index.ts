@@ -23,6 +23,7 @@ import type {
   VisualValidationReport,
 } from "../shared/types.js";
 import { CredentialStore } from "./credential-store.js";
+import { DiagnosticLog } from "./diagnostic-log.js";
 import { HistoryDatabase } from "./history-database.js";
 import {
   expandEnvironmentVariables,
@@ -36,6 +37,7 @@ let overlayWindow: BrowserWindow | undefined;
 let settingsStore: SettingsStore;
 let credentialStore: CredentialStore;
 let historyDatabase: HistoryDatabase;
+let diagnosticLog: DiagnosticLog;
 let catalog: CardCatalog;
 let parser: PowerLogParser;
 let watcher: PowerLogWatcher | undefined;
@@ -70,10 +72,17 @@ app.whenReady().then(async () => {
   settingsStore = new SettingsStore(join(userData, "settings.json"));
   credentialStore = new CredentialStore();
   historyDatabase = new HistoryDatabase(join(userData, "history.db"));
+  diagnosticLog = new DiagnosticLog(join(userData, "diagnostics.jsonl"));
   settings = await settingsStore.load();
   catalog = await CardCatalog.load(resolveCatalogPath());
   historyDatabase.setCardCatalogVersion(catalog.version);
   parser = new PowerLogParser();
+  writeDiagnostic("app.ready", {
+    userData,
+    catalogVersion: catalog.version,
+    catalogSize: catalog.size(),
+    settings: diagnosticSettings(),
+  });
 
   createWindows();
   registerIpc();
@@ -255,6 +264,9 @@ async function testAgentConnection(): Promise<AppStatus> {
   busy = true;
   statusMessage = "正在测试 Agent 连接…";
   broadcastStatus();
+  writeDiagnostic("agent.connection_test.start", {
+    settings: diagnosticSettings(),
+  });
 
   try {
     const apiKey = await credentialStore.getApiKey();
@@ -273,12 +285,17 @@ async function testAgentConnection(): Promise<AppStatus> {
       },
       apiKey,
       catalog,
+      diagnosticAgentEvent,
     );
     const message = await client.testConnection();
     statusMessage = `Agent 连接测试通过：${message}`;
+    writeDiagnostic("agent.connection_test.ok", { message });
   } catch (error) {
     statusMessage =
       error instanceof Error ? error.message : "Agent 连接测试失败。";
+    writeDiagnostic("agent.connection_test.failed", {
+      error: statusMessage,
+    });
   } finally {
     busy = false;
     broadcastStatus();
@@ -294,6 +311,9 @@ async function analyzeCurrentState(): Promise<AppStatus> {
   busy = true;
   statusMessage = "正在读取并校验当前局面…";
   broadcastStatus();
+  writeDiagnostic("analysis.start", {
+    settings: diagnosticSettings(),
+  });
 
   try {
     assertLiveRecommendationsEnabled();
@@ -301,8 +321,13 @@ async function analyzeCurrentState(): Promise<AppStatus> {
       throw new Error("尚未从 Power.log 读取到有效局面。");
     }
     const snapshot = currentSnapshot;
+    writeDiagnostic("analysis.snapshot", snapshotSummary(snapshot));
     const snapshotReport = validateSnapshotForAnalysis(snapshot, catalog);
     if (!snapshotReport.ok) {
+      writeDiagnostic("analysis.snapshot_rejected", {
+        errors: snapshotReport.errors,
+        warnings: snapshotReport.warnings,
+      });
       throw new Error(snapshotReport.errors.join("；"));
     }
 
@@ -312,6 +337,13 @@ async function analyzeCurrentState(): Promise<AppStatus> {
       snapshot,
       catalog,
     );
+    writeDiagnostic("analysis.visual_validation", {
+      ok: visualValidation.ok,
+      errors: visualValidation.errors,
+      warnings: visualValidation.warnings,
+      resolution: visualValidation.resolution,
+      matchedEntityIds: visualValidation.matchedEntityIds,
+    });
     if (!visualValidation.ok) {
       throw new Error(visualValidation.errors.join("；"));
     }
@@ -342,6 +374,7 @@ async function analyzeCurrentState(): Promise<AppStatus> {
       },
       apiKey,
       catalog,
+      diagnosticAgentEvent,
     );
     const requestedRevision = snapshot.revision;
     const result = await client.analyze({
@@ -356,8 +389,17 @@ async function analyzeCurrentState(): Promise<AppStatus> {
     currentAnalysis = result;
     historyDatabase.saveAnalysis(result);
     statusMessage = "分析完成。";
+    writeDiagnostic("analysis.completed", {
+      snapshotRevision: result.snapshotRevision,
+      candidateCount: result.candidates.length,
+      summary: result.summary,
+      warnings: result.warnings,
+    });
   } catch (error) {
     statusMessage = error instanceof Error ? error.message : "分析失败。";
+    writeDiagnostic("analysis.failed", {
+      error: statusMessage,
+    });
   } finally {
     busy = false;
     broadcastStatus();
@@ -418,6 +460,80 @@ function getStatus(): AppStatus {
     visualValidation,
     busy,
     message: statusMessage,
+  };
+}
+
+function diagnosticAgentEvent({
+  event,
+  data,
+}: {
+  event: string;
+  data?: Record<string, unknown>;
+}): void {
+  writeDiagnostic(event, data ?? {});
+}
+
+function writeDiagnostic(event: string, data: Record<string, unknown> = {}): void {
+  void diagnosticLog?.write(event, data).catch((error) => {
+    console.error("Failed to write diagnostic log", error);
+  });
+}
+
+function diagnosticSettings() {
+  return {
+    powerLogPath: settings.powerLogPath,
+    baseUrl: settings.baseUrl,
+    model: settings.model,
+    transport: settings.transport,
+    timeoutMs: settings.timeoutMs,
+    maxCandidates: settings.maxCandidates,
+    liveRecommendationsEnabled: settings.liveRecommendationsEnabled,
+    liveRecommendationsRiskAccepted: Boolean(
+      settings.liveRecommendationsRiskAcceptedAt,
+    ),
+  };
+}
+
+function snapshotSummary(snapshot: GameStateSnapshot) {
+  return {
+    revision: snapshot.revision,
+    gameMode: snapshot.gameMode,
+    gameType: snapshot.gameType,
+    turn: snapshot.turn,
+    activePlayer: snapshot.activePlayer,
+    animationPending: snapshot.animationPending,
+    self: {
+      hero: snapshot.self.hero.name ?? snapshot.self.hero.cardId,
+      health: snapshot.self.hero.health,
+      mana: `${snapshot.self.mana}/${snapshot.self.maxMana}`,
+      hand: snapshot.self.hand.map((card) => ({
+        entityId: card.entityId,
+        cardId: card.cardId,
+        name: card.name,
+        cost: card.cost,
+      })),
+      board: snapshot.self.board.map(cardSummary),
+    },
+    opponent: {
+      hero: snapshot.opponent.hero.name ?? snapshot.opponent.hero.cardId,
+      health: snapshot.opponent.hero.health,
+      handCount: snapshot.opponent.handCount,
+      board: snapshot.opponent.board.map(cardSummary),
+    },
+    uncertainties: snapshot.uncertainties,
+  };
+}
+
+function cardSummary(card: GameStateSnapshot["self"]["board"][number]) {
+  return {
+    entityId: card.entityId,
+    cardId: card.cardId,
+    name: card.name,
+    cost: card.cost,
+    attack: card.attack,
+    health: card.health,
+    damage: card.damage,
+    exhausted: card.exhausted,
   };
 }
 

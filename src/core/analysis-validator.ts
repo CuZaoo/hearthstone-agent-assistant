@@ -53,7 +53,7 @@ export function validateSnapshotForAnalysis(
     );
   }
   if (visibleCards.some((card) => !card.cardId)) {
-    warnings.push("部分可见实体缺少卡牌 ID，建议可能不完整。");
+    warnings.push("部分可见实体在 Power.log 中未公开卡牌 ID，建议可能不完整。");
   }
   const supportCards = [
     ...(snapshot.self.heroPower ? [snapshot.self.heroPower] : []),

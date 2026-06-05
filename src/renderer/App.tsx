@@ -312,7 +312,7 @@ function SnapshotColumn({
         <div className="card-list">
           {cards.map((card) => (
             <div className="card-chip" key={card.entityId}>
-              <strong>{card.name ?? card.cardId ?? `实体 ${card.entityId}`}</strong>
+              <strong>{cardTitle(card)}</strong>
               <small>{cardDetails(card)}</small>
             </div>
           ))}
@@ -382,6 +382,9 @@ function activePlayerLabel(activePlayer: ActivePlayer) {
 
 function cardDetails(card: CardReference): string {
   const parts = [`#${card.entityId}`];
+  if (!card.cardId) {
+    parts.push("Power.log 未公开卡牌 ID");
+  }
   if (card.cardId) {
     parts.push(card.cardId);
   }
@@ -403,6 +406,10 @@ function cardDetails(card: CardReference): string {
     card.exhausted ? "已行动" : undefined,
   ].filter(Boolean);
   return [...parts, ...flags].join(" · ");
+}
+
+function cardTitle(card: CardReference): string {
+  return card.name ?? card.cardId ?? `日志未公开 #${card.entityId}`;
 }
 
 function StatusCard({

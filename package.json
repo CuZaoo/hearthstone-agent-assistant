@@ -8,7 +8,8 @@
   "scripts": {
     "postinstall": "electron-builder install-app-deps",
     "start:built": "electron .",
-    "dev": "concurrently -k \"vite\" \"tsc -p tsconfig.main.json --watch\" \"wait-on http://localhost:5173 dist/main/main/index.js && electron .\"",
+    "dev": "node scripts/dev-runner.mjs",
+    "dev:legacy": "concurrently -k \"vite\" \"tsc -p tsconfig.main.json --watch\" \"wait-on http://localhost:5173 dist/main/main/index.js && electron .\"",
     "build": "npm run build:renderer && npm run build:main",
     "build:renderer": "vite build",
     "build:main": "tsc -p tsconfig.main.json",

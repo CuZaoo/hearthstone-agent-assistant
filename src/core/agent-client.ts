@@ -8,6 +8,11 @@ import type { CardCatalog } from "./card-catalog.js";
 import { sanitizeSnapshotForAgent } from "./snapshot-sanitizer.js";
 
 type StructuredOutputMode = "json_schema" | "json_object";
+type AgentDiagnosticEvent = {
+  event: string;
+  data?: Record<string, unknown>;
+};
+type AgentDiagnostics = (event: AgentDiagnosticEvent) => void;
 
 const SYSTEM_PROMPT = `你是炉石传说标准构筑对局分析助手。
 你只能使用请求中明确提供的可见信息，不得假设对手手牌、牌库顺序或随机结果。
@@ -93,6 +98,7 @@ export class AgentClient {
     >,
     private readonly apiKey: string,
     private readonly catalog: CardCatalog,
+    private readonly diagnostics?: AgentDiagnostics,
   ) {}
 
   async testConnection(): Promise<string> {
@@ -140,6 +146,14 @@ export class AgentClient {
       ...request,
       snapshot: sanitizeSnapshotForAgent(request.snapshot, this.catalog),
     };
+    this.emitDiagnostic("agent.analysis.input", {
+      snapshotRevision: safeRequest.snapshot.revision,
+      requestBytes: JSON.stringify(safeRequest).length,
+      visibleHistoryCount: safeRequest.snapshot.visibleHistory.length,
+      handCount: safeRequest.snapshot.self.hand.length,
+      selfBoardCount: safeRequest.snapshot.self.board.length,
+      opponentBoardCount: safeRequest.snapshot.opponent.board.length,
+    });
 
     let repairErrors: string[] = [];
     const deadline = Date.now() + this.settings.timeoutMs;
@@ -148,11 +162,26 @@ export class AgentClient {
       if (remainingMs <= 0) {
         throw new Error(`Agent 分析超过 ${this.settings.timeoutMs}ms 总预算。`);
       }
-      const result = await this.requestAnalysis(
-        safeRequest,
-        repairErrors,
-        remainingMs,
-      );
+      let result: AnalysisResult;
+      try {
+        result = await this.requestAnalysis(
+          safeRequest,
+          repairErrors,
+          remainingMs,
+        );
+      } catch (error) {
+        if (attempt === 0 && error instanceof Error) {
+          repairErrors = [
+            `${error.message} 请重新返回完整 JSON；不要输出推理过程；summary、rationale、description 必须简短。`,
+          ];
+          this.emitDiagnostic("agent.analysis.retry_after_error", {
+            attempt: attempt + 1,
+            error: error.message,
+          });
+          continue;
+        }
+        throw error;
+      }
       const report = validateAnalysisResult(
         result,
         request.snapshot,
@@ -171,6 +200,11 @@ export class AgentClient {
           createdAt: new Date().toISOString(),
         };
       }
+      this.emitDiagnostic("agent.analysis.validation_failed", {
+        attempt: attempt + 1,
+        errors: report.errors,
+        warnings: report.warnings,
+      });
       repairErrors = report.errors;
     }
     throw new Error(`Agent 返回结果未通过本地校验：${repairErrors.join("；")}`);
@@ -188,6 +222,7 @@ export class AgentClient {
         this.settings.transport === "responses"
           ? "/v1/responses"
           : "/v1/chat/completions";
+      const startedAt = Date.now();
       const payload =
         this.settings.transport === "responses"
           ? await this.postJson(
@@ -209,6 +244,10 @@ export class AgentClient {
         this.settings.transport === "responses"
           ? extractResponsesText(payload)
           : extractChatCompletionsText(payload);
+      this.emitDiagnostic("agent.analysis.raw_response", {
+        elapsedMs: Date.now() - startedAt,
+        responseText: text,
+      });
       return parseAnalysisResult(text);
     } catch (error) {
       if (error instanceof Error && error.name === "AbortError") {
@@ -253,6 +292,10 @@ export class AgentClient {
       throw new AgentHttpError(response.status);
     }
     return response.json() as Promise<unknown>;
+  }
+
+  private emitDiagnostic(event: string, data: Record<string, unknown>): void {
+    this.diagnostics?.({ event, data });
   }
 }
 
@@ -331,7 +374,7 @@ function chatCompletionsPayload(
   return {
     model,
     temperature: 0.2,
-    max_tokens: 1_200,
+    max_tokens: 2_000,
     stream: false,
     messages: [
       { role: "system", content: SYSTEM_PROMPT },
@@ -362,7 +405,9 @@ function buildUserContent(
       : "";
   const schema =
     mode === "json_object"
-      ? `\n只返回 JSON 对象，字段为：
+      ? `\n只返回 JSON 对象。不要输出思考过程、重新评估过程或长篇解释。
+限制：summary 不超过 80 字；每条路线最多 4 个动作；description 不超过 30 字；rationale 不超过 120 字；每条 risk 不超过 40 字。
+字段为：
 {
   "snapshotRevision": "${request.snapshot.revision}",
   "summary": "简短中文总结",
@@ -421,24 +466,36 @@ function extractChatCompletionsText(payload: unknown): string {
 }
 
 function parseAnalysisResult(text: string): AnalysisResult {
+  const json = extractJsonObject(text);
+  let parsed: AnalysisResult;
   try {
-    const parsed = JSON.parse(extractJsonObject(text)) as AnalysisResult;
-    return {
-      ...parsed,
-      candidates: parsed.candidates.map((candidate) => ({
-        ...candidate,
-        actions: candidate.actions.map((action) => ({
-          ...action,
-          sourceEntityId: action.sourceEntityId ?? undefined,
-          sourceCardId: action.sourceCardId ?? undefined,
-          targetEntityId: action.targetEntityId ?? undefined,
-          targetSide: action.targetSide ?? undefined,
-        })),
-      })),
-    };
+    parsed = JSON.parse(json) as AnalysisResult;
   } catch {
     throw new Error("Agent 返回了无效 JSON。");
   }
+  if (
+    typeof parsed.snapshotRevision !== "string" ||
+    typeof parsed.summary !== "string" ||
+    !Array.isArray(parsed.warnings) ||
+    !Array.isArray(parsed.candidates)
+  ) {
+    throw new Error("Agent 返回 JSON 结构无效：缺少 snapshotRevision、summary、warnings 或 candidates。");
+  }
+  return {
+    ...parsed,
+    candidates: parsed.candidates.map((candidate) => ({
+      ...candidate,
+      actions: Array.isArray(candidate.actions)
+        ? candidate.actions.map((action) => ({
+            ...action,
+            sourceEntityId: action.sourceEntityId ?? undefined,
+            sourceCardId: action.sourceCardId ?? undefined,
+            targetEntityId: action.targetEntityId ?? undefined,
+            targetSide: action.targetSide ?? undefined,
+          }))
+        : [],
+    })),
+  };
 }
 
 function parseConnectionTestResult(text: string): {

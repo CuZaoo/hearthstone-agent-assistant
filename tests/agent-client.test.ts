@@ -150,6 +150,37 @@ describe("AgentClient", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+  it("retries once when chat completions returns invalid json", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            choices: [{ message: { content: "{\"snapshotRevision\":\"1\"" } }],
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        ),
+      )
+      .mockResolvedValueOnce(chatResponseFor(validResult()));
+    const client = new AgentClient(
+      { ...settings, transport: "chat-completions" },
+      "secret-key",
+      catalog,
+    );
+
+    await expect(client.analyze(request)).resolves.toMatchObject({
+      summary: "结束回合",
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(String(fetchMock.mock.calls[1]?.[1]?.body)).toContain(
+      "请重新返回完整 JSON",
+    );
+  });
+
   it("falls back to json_object for chat completions connection tests", async () => {
     const fetchMock = vi
       .spyOn(globalThis, "fetch")

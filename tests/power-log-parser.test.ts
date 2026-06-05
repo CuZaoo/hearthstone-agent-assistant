@@ -178,6 +178,54 @@ describe("PowerLogParser", () => {
     );
   });
 
+  it("learns hand cards from entity descriptions on otherwise ignored tags", () => {
+    const parser = new PowerLogParser();
+
+    parser.consumeLine(
+      "D 12:00:00.001 GameState.DebugPrintPower() - Player EntityID=1 PlayerID=1 GameAccountId=[hi=1 lo=2]",
+    );
+    parser.consumeLine(
+      "D 12:00:00.002 GameState.DebugPrintPower() -     TAG_CHANGE Entity=[entityName=月亮井 id=32 zone=HAND zonePos=2 cardId=EDR_476 player=1] tag=NUM_TURNS_IN_HAND value=3 ",
+    );
+
+    const hand = parser.snapshot("test-catalog").self.hand;
+    expect(hand[0]?.cardId).toBe("EDR_476");
+    expect(hand[0]?.name).toBe("月亮井");
+  });
+
+  it("uses DebugPrintOptions entity descriptions as a log-only fallback", () => {
+    const parser = new PowerLogParser();
+
+    parser.consumeLine(
+      "D 12:00:00.001 GameState.DebugPrintPower() - Player EntityID=1 PlayerID=1 GameAccountId=[hi=1 lo=2]",
+    );
+    parser.consumeLine(
+      "D 12:00:00.002 GameState.DebugPrintOptions() -   option 3 type=POWER mainEntity=[entityName=抹除存在 id=32 zone=HAND zonePos=3 cardId=TIME_433 player=1] error=NONE errorParam=",
+    );
+
+    const hand = parser.snapshot("test-catalog").self.hand;
+    expect(hand[0]?.cardId).toBe("TIME_433");
+    expect(hand[0]?.name).toBe("抹除存在");
+  });
+
+  it("replaces placeholder entity names when a later log line reveals the card", () => {
+    const parser = new PowerLogParser();
+
+    parser.consumeLine(
+      "D 12:00:00.001 GameState.DebugPrintPower() - Player EntityID=1 PlayerID=1 GameAccountId=[hi=1 lo=2]",
+    );
+    parser.consumeLine(
+      "D 12:00:00.002 GameState.DebugPrintPower() - TAG_CHANGE Entity=[entityName=UNKNOWN ENTITY [cardType=INVALID] id=10 zone=HAND zonePos=1 cardId= player=1] tag=ZONE value=HAND",
+    );
+    parser.consumeLine(
+      "D 12:00:00.003 GameState.DebugPrintPower() - TAG_CHANGE Entity=[entityName=神圣新星 id=10 zone=HAND zonePos=1 cardId=CORE_CS1_112 player=1] tag=ZONE_POSITION value=1",
+    );
+
+    const hand = parser.snapshot("test-catalog").self.hand;
+    expect(hand[0]?.cardId).toBe("CORE_CS1_112");
+    expect(hand[0]?.name).toBe("神圣新星");
+  });
+
   it("parses full entity updates with attached hero descriptions", () => {
     const parser = new PowerLogParser();
 
