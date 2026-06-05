@@ -185,7 +185,10 @@ describe("PowerLogParser", () => {
       "D 12:00:00.001 GameState.DebugPrintPower() - Player EntityID=1 PlayerID=1 GameAccountId=[hi=1 lo=2]",
     );
     parser.consumeLine(
-      "D 12:00:00.002 GameState.DebugPrintPower() -     TAG_CHANGE Entity=[entityName=月亮井 id=32 zone=HAND zonePos=2 cardId=EDR_476 player=1] tag=NUM_TURNS_IN_HAND value=3 ",
+      "D 12:00:00.002 GameState.DebugPrintPower() - Player EntityID=2 PlayerID=2 GameAccountId=[hi=0 lo=0]",
+    );
+    parser.consumeLine(
+      "D 12:00:00.003 GameState.DebugPrintPower() -     TAG_CHANGE Entity=[entityName=月亮井 id=32 zone=HAND zonePos=2 cardId=EDR_476 player=1] tag=NUM_TURNS_IN_HAND value=3 ",
     );
 
     const hand = parser.snapshot("test-catalog").self.hand;
@@ -200,12 +203,82 @@ describe("PowerLogParser", () => {
       "D 12:00:00.001 GameState.DebugPrintPower() - Player EntityID=1 PlayerID=1 GameAccountId=[hi=1 lo=2]",
     );
     parser.consumeLine(
-      "D 12:00:00.002 GameState.DebugPrintOptions() -   option 3 type=POWER mainEntity=[entityName=抹除存在 id=32 zone=HAND zonePos=3 cardId=TIME_433 player=1] error=NONE errorParam=",
+      "D 12:00:00.002 GameState.DebugPrintPower() - Player EntityID=2 PlayerID=2 GameAccountId=[hi=0 lo=0]",
+    );
+    parser.consumeLine(
+      "D 12:00:00.003 GameState.DebugPrintOptions() -   option 3 type=POWER mainEntity=[entityName=抹除存在 id=32 zone=HAND zonePos=3 cardId=TIME_433 player=1] error=NONE errorParam=",
     );
 
     const hand = parser.snapshot("test-catalog").self.hand;
     expect(hand[0]?.cardId).toBe("TIME_433");
     expect(hand[0]?.name).toBe("抹除存在");
+  });
+
+  it("uses the named local DebugPrintGame player over ambiguous account ids", () => {
+    const parser = new PowerLogParser();
+
+    parser.consumeLine(
+      "D 12:00:00.001 GameState.DebugPrintPower() - Player EntityID=2 PlayerID=1 GameAccountId=[hi=144115211015832391 lo=1722555506]",
+    );
+    parser.consumeLine(
+      "D 12:00:00.002 GameState.DebugPrintPower() - Player EntityID=3 PlayerID=2 GameAccountId=[hi=144115211015832391 lo=132642487]",
+    );
+    parser.consumeLine(
+      "D 12:00:00.003 GameState.DebugPrintGame() - PlayerID=1, PlayerName=UNKNOWN HUMAN PLAYER",
+    );
+    parser.consumeLine(
+      "D 12:00:00.004 GameState.DebugPrintGame() - PlayerID=2, PlayerName=一定要淡定#5470",
+    );
+    parser.consumeLine(
+      "D 12:00:00.005 GameState.DebugPrintPower() - FULL_ENTITY - Updating [entityName=古尔丹 id=74 zone=PLAY zonePos=0 cardId=HERO_07 player=1] CardID=HERO_07",
+    );
+    parser.consumeLine(
+      "D 12:00:00.006 GameState.DebugPrintPower() -         tag=CARDTYPE value=HERO",
+    );
+    parser.consumeLine(
+      "D 12:00:00.007 GameState.DebugPrintPower() - FULL_ENTITY - Updating [entityName=泰兰德·语风 id=76 zone=PLAY zonePos=0 cardId=HERO_09a player=2] CardID=HERO_09a",
+    );
+    parser.consumeLine(
+      "D 12:00:00.008 GameState.DebugPrintPower() -         tag=CARDTYPE value=HERO",
+    );
+    parser.consumeLine(
+      "D 12:00:00.009 GameState.DebugPrintPower() -     TAG_CHANGE Entity=一定要淡定#5470 tag=CURRENT_PLAYER value=1 ",
+    );
+
+    const snapshot = parser.snapshot("test-catalog");
+    expect(snapshot.self.hero.cardId).toBe("HERO_09a");
+    expect(snapshot.opponent.hero.cardId).toBe("HERO_07");
+    expect(snapshot.activePlayer).toBe("self");
+  });
+
+  it("uses local playable hand options to correct self perspective", () => {
+    const parser = new PowerLogParser();
+
+    parser.consumeLine(
+      "D 12:00:00.001 GameState.DebugPrintPower() - Player EntityID=2 PlayerID=1 GameAccountId=[hi=1 lo=1]",
+    );
+    parser.consumeLine(
+      "D 12:00:00.002 GameState.DebugPrintPower() - Player EntityID=3 PlayerID=2 GameAccountId=[hi=1 lo=2]",
+    );
+    parser.consumeLine(
+      "D 12:00:00.003 GameState.DebugPrintPower() - FULL_ENTITY - Updating [entityName=古尔丹 id=74 zone=PLAY zonePos=0 cardId=HERO_07 player=1] CardID=HERO_07",
+    );
+    parser.consumeLine(
+      "D 12:00:00.004 GameState.DebugPrintPower() -         tag=CARDTYPE value=HERO",
+    );
+    parser.consumeLine(
+      "D 12:00:00.005 GameState.DebugPrintPower() - FULL_ENTITY - Updating [entityName=泰兰德·语风 id=76 zone=PLAY zonePos=0 cardId=HERO_09a player=2] CardID=HERO_09a",
+    );
+    parser.consumeLine(
+      "D 12:00:00.006 GameState.DebugPrintPower() -         tag=CARDTYPE value=HERO",
+    );
+    parser.consumeLine(
+      "D 12:00:00.007 GameState.DebugPrintOptions() -   option 1 type=POWER mainEntity=[entityName=月亮井 id=59 zone=HAND zonePos=1 cardId=EDR_476 player=2] error=NONE errorParam=",
+    );
+
+    const snapshot = parser.snapshot("test-catalog");
+    expect(snapshot.self.hero.cardId).toBe("HERO_09a");
+    expect(snapshot.self.hand[0]?.cardId).toBe("EDR_476");
   });
 
   it("replaces placeholder entity names when a later log line reveals the card", () => {
@@ -224,6 +297,19 @@ describe("PowerLogParser", () => {
     const hand = parser.snapshot("test-catalog").self.hand;
     expect(hand[0]?.cardId).toBe("CORE_CS1_112");
     expect(hand[0]?.name).toBe("神圣新星");
+  });
+
+  it("does not expose placeholder entity names as visible card names", () => {
+    const parser = new PowerLogParser();
+
+    parser.consumeLine(
+      "D 12:00:00.001 GameState.DebugPrintPower() - Player EntityID=1 PlayerID=1 GameAccountId=[hi=1 lo=2]",
+    );
+    parser.consumeLine(
+      "D 12:00:00.002 GameState.DebugPrintPower() - TAG_CHANGE Entity=[entityName=UNKNOWN ENTITY [cardType=INVALID] id=10 zone=HAND zonePos=1 cardId= player=1] tag=ZONE value=HAND",
+    );
+
+    expect(parser.snapshot("test-catalog").self.hand[0]?.name).toBeUndefined();
   });
 
   it("parses full entity updates with attached hero descriptions", () => {

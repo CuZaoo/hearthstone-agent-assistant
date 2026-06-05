@@ -27,6 +27,7 @@ interface ParserState {
   playerIdByEntityId: Map<number, number>;
   playerEntityIdByPlayerId: Map<number, number>;
   playerIdByName: Map<string, number>;
+  localAccountPlayerIds: Set<number>;
   gameEntityId?: number;
   selfPlayerId?: number;
   opponentPlayerId?: number;
@@ -60,6 +61,7 @@ const DEBUG_FORMAT_TYPE =
   /DebugPrintGame\(\) - FormatType=(?<formatType>[A-Z0-9_]+)/;
 const DEBUG_PLAYER =
   /DebugPrintGame\(\) - PlayerID=(?<playerId>\d+), PlayerName=(?<name>.+)$/;
+const UNKNOWN_PLAYER_NAME = /^UNKNOWN\b/;
 const ENTITY_TAG_LINE =
   /(?:GameState|PowerTaskList)\.DebugPrintPower\(\) -\s+tag=(?<tag>[A-Z0-9_]+) value=(?<value>[^\s]+)/;
 const BLOCK_START = /BLOCK_START BlockType=(?<type>[A-Z_]+)/;
@@ -194,6 +196,12 @@ export class PowerLogParser {
         debugPlayerName.trim(),
         Number(debugPlayerId),
       );
+      if (
+        !UNKNOWN_PLAYER_NAME.test(debugPlayerName.trim()) &&
+        !this.hasUnambiguousLocalAccountPlayer()
+      ) {
+        this.setSelfPlayerId(Number(debugPlayerId));
+      }
       this.bumpRevision();
       return;
     }
@@ -245,12 +253,10 @@ export class PowerLogParser {
         entityId,
         Number(player.groups.playerId),
       );
-      if (
-        this.state.selfPlayerId === undefined &&
-        (player.groups.hi !== "0" || player.groups.lo !== "0")
-      ) {
-        this.setSelfPlayerId(Number(player.groups.playerId));
+      if (player.groups.hi !== "0" || player.groups.lo !== "0") {
+        this.state.localAccountPlayerIds.add(Number(player.groups.playerId));
       }
+      this.inferSelfFromAccountIds();
       this.state.currentEntityId = entityId;
       this.bumpRevision();
       return;
@@ -457,6 +463,20 @@ export class PowerLogParser {
     }
   }
 
+  private inferSelfFromAccountIds(): void {
+    if (this.state.playerIds.size < 2 || !this.hasUnambiguousLocalAccountPlayer()) {
+      return;
+    }
+    const [playerId] = this.state.localAccountPlayerIds;
+    if (playerId !== undefined) {
+      this.setSelfPlayerId(playerId);
+    }
+  }
+
+  private hasUnambiguousLocalAccountPlayer(): boolean {
+    return this.state.localAccountPlayerIds.size === 1;
+  }
+
   private getEntity(entityId: number): EntityState {
     let entity = this.state.entities.get(entityId);
     if (!entity) {
@@ -538,6 +558,15 @@ export class PowerLogParser {
       }
       const entity = this.getEntity(id);
       changed = this.mergeEntityDescription(entity, match[0]) || changed;
+      if (
+        shouldInferSelfFromOptions(line) &&
+        entity.controller !== undefined &&
+        entity.cardId &&
+        !this.hasUnambiguousLocalAccountPlayer()
+      ) {
+        this.setSelfPlayerId(entity.controller);
+        changed = true;
+      }
     }
     return changed;
   }
@@ -579,7 +608,7 @@ export class PowerLogParser {
     return {
       entityId: entity.entityId,
       cardId: entity.cardId,
-      name: entity.name,
+      name: visibleEntityName(entity.name),
       cardType:
         entity.tags.CARDTYPE === undefined
           ? undefined
@@ -651,6 +680,7 @@ export class PowerLogParser {
       playerIdByEntityId: new Map(),
       playerEntityIdByPlayerId: new Map(),
       playerIdByName: new Map(),
+      localAccountPlayerIds: new Set(),
       turn: 0,
       activePlayer: "unknown",
       gameMode: "unknown",
@@ -756,6 +786,15 @@ function shouldReadEntityDescriptionMetadata(line: string): boolean {
   );
 }
 
+function shouldInferSelfFromOptions(line: string): boolean {
+  return (
+    line.includes("DebugPrintOptions()") &&
+    line.includes("mainEntity=[") &&
+    line.includes(" zone=HAND ") &&
+    /cardId=[A-Za-z0-9_]+/.test(line)
+  );
+}
+
 function byZonePosition(a: CardReference, b: CardReference): number {
   return (a.zonePosition ?? 0) - (b.zonePosition ?? 0);
 }
@@ -769,4 +808,8 @@ function isCardType(entity: EntityState, name: string, numericValue: number): bo
 
 function shouldReplaceName(current: string | undefined, next: string): boolean {
   return !current || (UNKNOWN_ENTITY_NAME.test(current) && !UNKNOWN_ENTITY_NAME.test(next));
+}
+
+function visibleEntityName(name: string | undefined): string | undefined {
+  return name && !UNKNOWN_ENTITY_NAME.test(name) ? name : undefined;
 }
