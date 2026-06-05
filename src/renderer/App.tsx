@@ -3,6 +3,8 @@ import type {
   AnalysisResult,
   AppSettings,
   AppStatus,
+  ActivePlayer,
+  CardReference,
   CandidateLine,
 } from "../shared/types";
 
@@ -96,10 +98,12 @@ function Dashboard({ status }: { status: AppStatus }) {
 
       {status.message && <div className="message">{status.message}</div>}
 
+      <SnapshotPreview status={status} />
+
       <section className="panel">
         <h2>设置</h2>
         <div className="form-grid">
-          <Field label="Power.log 路径">
+          <Field label="Power.log 路径或炉石安装目录">
             <input
               value={settings.powerLogPath}
               onChange={(event) =>
@@ -220,6 +224,86 @@ function Dashboard({ status }: { status: AppStatus }) {
   );
 }
 
+function SnapshotPreview({ status }: { status: AppStatus }) {
+  const snapshot = status.snapshot;
+  if (!snapshot) {
+    return (
+      <section className="panel">
+        <h2>当前可见局面</h2>
+        <p className="muted">等待 Power.log 产生对局事件。</p>
+      </section>
+    );
+  }
+
+  return (
+    <section className="panel">
+      <h2>当前可见局面</h2>
+      <div className="snapshot-meta">
+        <span>回合 {snapshot.turn}</span>
+        <span>行动方：{activePlayerLabel(snapshot.activePlayer)}</span>
+        <span>
+          法力：{snapshot.self.mana}/{snapshot.self.maxMana}
+        </span>
+        <span>对手手牌：{snapshot.opponent.handCount}</span>
+        <span>对手奥秘：{snapshot.opponent.secretCount}</span>
+        {snapshot.animationPending && <span className="stale">动画未结束</span>}
+      </div>
+      <div className="snapshot-grid">
+        <SnapshotColumn
+          title="己方手牌"
+          empty="未识别到己方手牌"
+          cards={snapshot.self.hand}
+        />
+        <SnapshotColumn
+          title="己方场面"
+          empty="己方场面为空"
+          cards={snapshot.self.board}
+        />
+        <SnapshotColumn
+          title="对手场面"
+          empty="对手场面为空"
+          cards={snapshot.opponent.board}
+        />
+      </div>
+      {snapshot.uncertainties.length > 0 && (
+        <p className="snapshot-warning">
+          不确定项：{snapshot.uncertainties.join("；")}
+        </p>
+      )}
+    </section>
+  );
+}
+
+function SnapshotColumn({
+  title,
+  empty,
+  cards,
+}: {
+  title: string;
+  empty: string;
+  cards: CardReference[];
+}) {
+  return (
+    <div className="snapshot-column">
+      <h3>
+        {title} <span>{cards.length}</span>
+      </h3>
+      {cards.length === 0 ? (
+        <p className="muted">{empty}</p>
+      ) : (
+        <div className="card-list">
+          {cards.map((card) => (
+            <div className="card-chip" key={card.entityId}>
+              <strong>{card.name ?? card.cardId ?? `实体 ${card.entityId}`}</strong>
+              <small>{cardDetails(card)}</small>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Overlay({ status }: { status: AppStatus }) {
   const analysis = status.analysis;
   return (
@@ -266,6 +350,41 @@ function Candidate({ candidate }: { candidate: CandidateLine }) {
       {candidate.risks.length > 0 && <small>风险：{candidate.risks.join("；")}</small>}
     </article>
   );
+}
+
+function activePlayerLabel(activePlayer: ActivePlayer) {
+  if (activePlayer === "self") {
+    return "己方";
+  }
+  if (activePlayer === "opponent") {
+    return "对手";
+  }
+  return "未知";
+}
+
+function cardDetails(card: CardReference): string {
+  const parts = [`#${card.entityId}`];
+  if (card.cardId) {
+    parts.push(card.cardId);
+  }
+  if (card.cost !== undefined) {
+    parts.push(`${card.cost}费`);
+  }
+  if (card.attack !== undefined || card.health !== undefined) {
+    parts.push(`${card.attack ?? "?"}/${card.health ?? "?"}`);
+  }
+  if (card.damage) {
+    parts.push(`受伤${card.damage}`);
+  }
+  const flags = [
+    card.taunt ? "嘲讽" : undefined,
+    card.divineShield ? "圣盾" : undefined,
+    card.poisonous ? "剧毒" : undefined,
+    card.lifesteal ? "吸血" : undefined,
+    card.dormant ? "休眠" : undefined,
+    card.exhausted ? "已行动" : undefined,
+  ].filter(Boolean);
+  return [...parts, ...flags].join(" · ");
 }
 
 function StatusCard({

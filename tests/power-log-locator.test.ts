@@ -56,6 +56,41 @@ describe("locatePowerLog", () => {
       },
     });
   });
+
+  it("accepts a Hearthstone install directory and reads Logs sessions from it", async () => {
+    const root = await createTemporaryRoot();
+    const logs = join(root, "Logs");
+    const session = join(logs, "Hearthstone_2025_01_02_00_00_00");
+    const powerLog = join(session, "Power.log");
+    await mkdir(session, { recursive: true });
+    await writeFile(powerLog, "", "utf8");
+
+    await expect(
+      inspectPowerLog(root, { automaticLocations: false }),
+    ).resolves.toMatchObject({
+      location: {
+        path: powerLog,
+        source: "configured",
+      },
+      expectedPath: join(root, "Logs", "Power.log"),
+    });
+  });
+
+  it("accepts a Hearthstone Logs directory directly", async () => {
+    const root = await createTemporaryRoot();
+    const logs = join(root, "Logs");
+    const session = join(logs, "Hearthstone_2025_01_02_00_00_00");
+    const powerLog = join(session, "Power.log");
+    await mkdir(session, { recursive: true });
+    await writeFile(powerLog, "", "utf8");
+
+    await expect(
+      locatePowerLog(logs, { automaticLocations: false }),
+    ).resolves.toEqual({
+      path: powerLog,
+      source: "configured",
+    });
+  });
 });
 
 async function createTemporaryRoot(): Promise<string> {

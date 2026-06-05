@@ -196,6 +196,82 @@ button.primary {
   font-size: 13px;
 }
 
+.snapshot-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.snapshot-meta span {
+  border: 1px solid #3a4358;
+  border-radius: 999px;
+  padding: 4px 10px;
+  color: #c5ccda;
+  background: rgba(255, 255, 255, 0.035);
+  font-size: 12px;
+}
+
+.snapshot-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.snapshot-column {
+  border: 1px solid #2d3445;
+  border-radius: 10px;
+  padding: 14px;
+  background: rgba(255, 255, 255, 0.026);
+}
+
+.snapshot-column h3 {
+  display: flex;
+  justify-content: space-between;
+  margin: 0 0 12px;
+  color: #e3d0aa;
+  font-size: 15px;
+}
+
+.snapshot-column h3 span {
+  color: #8e98aa;
+  font-size: 12px;
+}
+
+.card-list {
+  display: grid;
+  gap: 8px;
+}
+
+.card-chip {
+  display: grid;
+  gap: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 9px 10px;
+  background: rgba(18, 22, 32, 0.8);
+}
+
+.card-chip strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #f4ead8;
+  font-size: 13px;
+}
+
+.card-chip small,
+.snapshot-warning {
+  color: #9ea7b8;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.snapshot-warning {
+  margin: 14px 0 0;
+  color: #e4b889;
+}
+
 .overlay-shell {
   min-height: 100vh;
   border: 1px solid rgba(205, 149, 67, 0.54);
@@ -298,7 +374,8 @@ button.primary {
   }
 
   .status-grid,
-  .form-grid {
+  .form-grid,
+  .snapshot-grid {
     grid-template-columns: 1fr;
   }
 }

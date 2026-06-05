@@ -38,6 +38,13 @@ npm run package
 [Hearthstone Deck Tracker 的日志配置说明](https://github.com/HearthSim/Hearthstone-Deck-Tracker/wiki/Setting-up-the-log.config)
 手动启用 `Power.log`。
 
+可填写 `Power.log` 文件路径、炉石安装目录，或炉石安装目录下的 `Logs`
+目录。参考 AutoHS 的新版定位方式，当前炉石会话日志通常位于：
+
+```text
+<炉石安装目录>\Logs\Hearthstone_日期时间\Power.log
+```
+
 默认路径：
 
 ```text

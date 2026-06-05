@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { readFile, readdir, stat } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 
 export interface PowerLogLocation {
   path: string;
@@ -44,9 +44,9 @@ export async function inspectPowerLog(
     root: string;
     source: PowerLogLocation["source"];
   }> = [];
-  const configuredRoot = dirname(expandedConfiguredPath);
-  if (existsSync(configuredRoot)) {
-    candidates.push({ root: configuredRoot, source: "configured" });
+  const configuredRoots = await configuredLogRoots(expandedConfiguredPath);
+  for (const root of configuredRoots) {
+    candidates.push({ root, source: "configured" });
   }
 
   if (options.automaticLocations !== false) {
@@ -91,7 +91,7 @@ export async function inspectPowerLog(
     location: latest
       ? { path: latest.path, source: latest.source }
       : undefined,
-    expectedPath: expandedConfiguredPath,
+    expectedPath: expectedPowerLogPath(expandedConfiguredPath),
     latestSession: latestSessions[0]
       ? {
           path: latestSessions[0].path,
@@ -163,6 +163,29 @@ async function inspectLogsRoot(
       modifiedMs: latestSession.modifiedMs,
     },
   };
+}
+
+async function configuredLogRoots(path: string): Promise<string[]> {
+  const stats = await safeStat(path);
+  if (stats?.isDirectory()) {
+    return basename(path).toLowerCase() === "logs"
+      ? [path, join(dirname(path), "Logs")]
+      : [join(path, "Logs"), path];
+  }
+
+  const configuredRoot = dirname(path);
+  return existsSync(configuredRoot) ? [configuredRoot] : [];
+}
+
+function expectedPowerLogPath(path: string): string {
+  const name = basename(path).toLowerCase();
+  if (name === "power.log") {
+    return path;
+  }
+  if (name === "logs") {
+    return join(path, "Power.log");
+  }
+  return join(path, "Logs", "Power.log");
 }
 
 async function readHearthstoneDeckTrackerInstallRoot(): Promise<string | undefined> {

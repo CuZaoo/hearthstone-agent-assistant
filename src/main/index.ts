@@ -192,8 +192,7 @@ async function startWatcher(): Promise<void> {
 async function refreshWatcher(): Promise<void> {
   const inspection = await inspectPowerLog(settings.powerLogPath);
   const location = inspection.location;
-  const path =
-    location?.path ?? expandEnvironmentVariables(settings.powerLogPath);
+  const path = location?.path ?? inspection.expectedPath;
   if (watcher?.path === path) {
     return;
   }
