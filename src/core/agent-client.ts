@@ -242,14 +242,14 @@ export class AgentClient {
     signal: AbortSignal,
   ): Promise<unknown> {
     const response = await fetch(joinUrl(this.settings.baseUrl, endpoint), {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${this.apiKey}`,
-          "Content-Type": "application/json",
-        },
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${this.apiKey}`,
+        "Content-Type": "application/json",
+      },
       body: JSON.stringify(body),
       signal,
-      });
+    });
     if (!response.ok) {
       throw new AgentHttpError(response.status);
     }
@@ -435,6 +435,10 @@ function parseConnectionTestResult(text: string): {
 
 function joinUrl(baseUrl: string, path: string): string {
   const normalizedBase = baseUrl.replace(/\/+$/, "");
+  const normalizedPath = path.replace(/\/+$/, "");
+  if (normalizedBase.endsWith(normalizedPath)) {
+    return normalizedBase;
+  }
   if (normalizedBase.endsWith("/v1") && path.startsWith("/v1/")) {
     return `${normalizedBase}${path.slice(3)}`;
   }

@@ -75,6 +75,28 @@ describe("AgentClient", () => {
     expect(body).not.toContain("secret-key");
   });
 
+  it("accepts a full chat completions endpoint as baseUrl", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(chatResponseFor({ ok: true, message: "连接正常" }));
+    const client = new AgentClient(
+      {
+        ...settings,
+        baseUrl: "http://10.10.101.31:8001/v1/chat/completions",
+        model: "qwen3.6-35b",
+        transport: "chat-completions",
+      },
+      "secret-key",
+      catalog,
+    );
+
+    await expect(client.testConnection()).resolves.toBe("连接正常");
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      "http://10.10.101.31:8001/v1/chat/completions",
+    );
+  });
+
   it("falls back to json_object when chat completions rejects json_schema", async () => {
     const fetchMock = vi
       .spyOn(globalThis, "fetch")
