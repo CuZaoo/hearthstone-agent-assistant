@@ -16,7 +16,7 @@ Windows 11 桌面应用原型。应用只读取 `Power.log`、本地截图和用
 
 ## 本地开发
 
-依赖尚未自动安装。取得明确下载授权后执行：
+依赖已按 Wang 授权安装。常用命令：
 
 ```powershell
 npm install
@@ -57,29 +57,29 @@ npm run log:diagnose -- `
 
 ## 卡牌快照
 
-`assets/card-catalog.zhCN.json` 当前是未配置占位文件。应用会阻止在缺少卡牌元数据或视觉特征时发起分析，避免输出不可靠建议。
+`assets/card-catalog.zhCN.json` 已内置 `zhCN` 标准模式卡牌快照。应用会在缺少卡牌元数据、视觉特征或 `Power.log` build 与快照不一致时阻止分析，避免输出不可靠建议。
 
-正式测试前需要在得到资源下载授权后，使用官方卡牌数据制作标准模式 `zhCN` 快照。每条记录至少需要卡牌 ID、名称、文本、费用、标准模式标记和本地图像特征哈希；发布包不应包含完整卡图。
+快照记录卡牌 ID、名称、文本、费用、标准模式标记和本地图像特征哈希；发布包不包含完整卡图。
 
-项目提供两个不会联网的本地脚本：
+当前快照使用 HearthstoneJSON `243002` `zhCN` 卡牌数据和 `scripts/standard-sets.2026-06.json` 标准卡池清单生成：
 
 ```powershell
 node scripts/build-card-catalog.mjs `
-  --cards .\local-data\cards.zhCN.json `
-  --sets .\local-data\standard-set-ids.json `
-  --features .\local-data\image-features.json `
-  --game-build 123456 `
-  --version 2026.06.04 `
+  --cards .\local-data\cards.latest.zhCN.json `
+  --sets .\scripts\standard-sets.2026-06.json `
+  --features .\local-data\image-features.combined.json `
+  --game-build 243002 `
+  --version hjson-243002-zhCN-2026-06-05 `
   --out .\assets\card-catalog.zhCN.json
 
 npm run catalog:validate
 ```
 
 - `cards.zhCN.json` 可以是官方卡牌 API 返回的 `cards` 数组或包含该数组的对象。
-- `standard-set-ids.json` 是标准卡池的 set ID 数组，或包含 `standardSetIds` 数组的对象。
+- `standard-sets.2026-06.json` 是标准卡池的 set 名称数组，也兼容 set ID 数组。
 - `image-features.json` 是 `cardId` 到 16 位十六进制 dHash 的对象。
 - `game-build` 必须与当前 `Power.log` 中的 `BuildNumber` 一致，否则应用会阻止分析。
-- 脚本只读取本地文件，不会下载资源。
+- 构建脚本只读取本地文件，不会下载资源。
 
 如果本机已安装 Hearthstone Deck Tracker，也可以直接从其现有
 `CardDefs.base.xml` 生成元数据：
@@ -101,6 +101,16 @@ npm run features:build -- `
 ```
 
 视觉特征工具只读取本地图片并写入哈希，不会把图片打包进应用。
+
+Windows 环境下也提供 PowerShell 批处理脚本，可合并已有特征并按 `cardId` 模板下载缺失卡牌瓦片生成 dHash：
+
+```powershell
+.\scripts\build-image-features.ps1 `
+  -Merge .\local-data\image-features.cardtiles.json `
+  -CardIds .\local-data\missing-feature-card-ids.json `
+  -UrlTemplate "https://art.hearthstonejson.com/v1/tiles/{cardId}.jpg" `
+  -Out .\local-data\image-features.combined.json
+```
 
 ## 隐私
 

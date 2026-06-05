@@ -4,26 +4,26 @@ import { resolve } from "node:path";
 const args = parseArgs(process.argv.slice(2));
 if (!args.cards || !args.sets || !args.out) {
   fail(
-    "用法: node scripts/build-card-catalog.mjs --cards <cards.json> --sets <standard-set-ids.json> --out <catalog.json> [--features <features.json>] [--version <version>]",
+    "用法: node scripts/build-card-catalog.mjs --cards <cards.json> --sets <standard-sets.json> --out <catalog.json> [--features <features.json>] [--version <version>]",
   );
 }
 
 const cardsPayload = await readJson(args.cards);
-const standardSetIds = new Set(normalizeSetIds(await readJson(args.sets)));
+const standardSets = normalizeStandardSets(await readJson(args.sets));
 const features = args.features
   ? normalizeFeatures(await readJson(args.features))
   : new Map();
 const cards = normalizeCards(cardsPayload);
 const entries = cards
-  .filter((card) => standardSetIds.has(card.cardSetId))
+  .filter((card) => isStandardCard(card, standardSets))
   .map((card) => ({
     cardId: card.id,
     name: card.name,
     text: card.text ?? "",
-    cost: card.manaCost ?? 0,
+    cost: card.manaCost ?? card.cost ?? 0,
     attack: card.attack,
     health: card.health,
-    cardType: normalizeCardType(card.cardType, card.cardTypeId),
+    cardType: normalizeCardType(card.cardType ?? card.type, card.cardTypeId),
     collectible: Boolean(card.collectible),
     standard: true,
     imageHash: features.get(card.id),
@@ -74,16 +74,32 @@ function normalizeCards(payload) {
       card &&
       typeof card.id === "string" &&
       typeof card.name === "string" &&
-      Number.isInteger(card.cardSetId),
+      (Number.isInteger(card.cardSetId) || typeof card.set === "string"),
   );
 }
 
-function normalizeSetIds(payload) {
-  const values = Array.isArray(payload) ? payload : payload.standardSetIds;
+function normalizeStandardSets(payload) {
+  const values = Array.isArray(payload)
+    ? payload
+    : (payload.standardSetIds ?? payload.standardSets);
   if (!Array.isArray(values)) {
-    fail("标准卡池 JSON 必须是 set ID 数组，或包含 standardSetIds 数组。");
+    fail("标准卡池 JSON 必须是 set ID 或 set 名称数组。");
   }
-  return values.map(Number).filter(Number.isInteger);
+  return {
+    ids: new Set(values.map(Number).filter(Number.isInteger)),
+    names: new Set(
+      values
+        .filter((value) => typeof value === "string")
+        .map((value) => value.toUpperCase()),
+    ),
+  };
+}
+
+function isStandardCard(card, standardSets) {
+  return (
+    (Number.isInteger(card.cardSetId) && standardSets.ids.has(card.cardSetId)) ||
+    (typeof card.set === "string" && standardSets.names.has(card.set.toUpperCase()))
+  );
 }
 
 function normalizeFeatures(payload) {
@@ -103,6 +119,9 @@ function normalizeFeatures(payload) {
 function normalizeCardType(cardType, cardTypeId) {
   if (typeof cardType === "string" && cardType) {
     return cardType.toUpperCase();
+  }
+  if (typeof cardType === "undefined" && typeof cardTypeId === "undefined") {
+    return "UNKNOWN";
   }
   return (
     {
