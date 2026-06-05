@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import type {
   AnalysisResult,
   AppSettings,
@@ -152,6 +152,20 @@ function Dashboard({ status }: { status: AppStatus }) {
               value={settings.timeoutMs}
               onChange={(event) =>
                 setSettings({ ...settings, timeoutMs: Number(event.target.value) })
+              }
+            />
+          </Field>
+          <Field label="候选路线数量（1-5）">
+            <input
+              type="number"
+              min={1}
+              max={5}
+              value={settings.maxCandidates}
+              onChange={(event) =>
+                setSettings({
+                  ...settings,
+                  maxCandidates: Number(event.target.value),
+                })
               }
             />
           </Field>

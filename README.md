@@ -9,6 +9,7 @@ Windows 11 桌面应用原型。应用只读取 `Power.log`、本地截图和用
 - `Ctrl+Shift+A` 分析当前局面
 - `Ctrl+Shift+O` 显示或隐藏置顶悬浮窗
 - OpenAI 兼容的 Responses API 与 Chat Completions API
+- 可配置接口地址、模型、传输协议、超时与候选路线数量
 - API Key 仅保存到 Windows 凭据管理器
 - 截图仅用于本地校验，不发送给远程 Agent
 
