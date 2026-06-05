@@ -19,7 +19,7 @@ export function sanitizeSnapshotForAgent(
       type: event.type,
       side: event.side,
       entityId: event.entityId,
-      cardId: event.cardId,
+      cardId: catalog.has(event.cardId) ? event.cardId : undefined,
       text: sanitizeEventText(event.type, event.text),
     })),
   };

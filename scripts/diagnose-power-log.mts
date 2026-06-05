@@ -1,7 +1,7 @@
 import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
 import { createInterface } from "node:readline";
-import { resolve } from "node:path";
+import { basename, resolve } from "node:path";
 import { PowerLogParser } from "../src/core/power-log-parser.ts";
 import type { GameStateSnapshot } from "../src/shared/types.ts";
 
@@ -44,7 +44,7 @@ const summary = recentGames.map(summarizeSnapshot);
 console.log(
   JSON.stringify(
     {
-      logPath,
+      logFileName: basename(logPath),
       bytes: fileStats.size,
       lines: lineCount,
       gamesFound: games.length,
@@ -103,4 +103,3 @@ function fail(message: string): never {
   process.exitCode = 1;
   throw new Error(message);
 }
-

@@ -49,7 +49,14 @@ describe("sanitizeSnapshotForAgent", () => {
         {
           id: "event-1",
           type: "ZONE",
+          cardId: "UNKNOWN_CARD",
           text: "玩家名#1234",
+        },
+        {
+          id: "event-2",
+          type: "DAMAGE",
+          cardId: "CARD_001",
+          text: "DAMAGE=2",
         },
       ],
       uncertainties: [],
@@ -64,6 +71,8 @@ describe("sanitizeSnapshotForAgent", () => {
     expect(sanitized.self.hand[0]?.text).toBe("测试文本");
     expect(sanitized.self.hand[0]?.cardType).toBe("SPELL");
     expect(sanitized.self.hand[0]?.tags).toEqual({});
+    expect(sanitized.visibleHistory[0]?.cardId).toBeUndefined();
+    expect(sanitized.visibleHistory[1]?.cardId).toBe("CARD_001");
     expect(JSON.stringify(sanitized)).not.toContain("不得发送");
     expect(JSON.stringify(sanitized)).not.toContain("玩家名");
   });
