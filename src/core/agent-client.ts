@@ -7,6 +7,8 @@ import { validateAnalysisResult } from "./analysis-validator.js";
 import type { CardCatalog } from "./card-catalog.js";
 import { sanitizeSnapshotForAgent } from "./snapshot-sanitizer.js";
 
+type StructuredOutputMode = "json_schema" | "json_object";
+
 const SYSTEM_PROMPT = `你是炉石传说标准构筑对局分析助手。
 你只能使用请求中明确提供的可见信息，不得假设对手手牌、牌库顺序或随机结果。
 你的目标是提供当前回合的高质量候选路线，不得声称路线是数学最优。
@@ -101,23 +103,19 @@ export class AgentClient {
         this.settings.transport === "responses"
           ? "/v1/responses"
           : "/v1/chat/completions";
-      const response = await fetch(joinUrl(this.settings.baseUrl, endpoint), {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${this.apiKey}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(
-          this.settings.transport === "responses"
-            ? responsesConnectionTestPayload(this.settings.model)
-            : chatCompletionsConnectionTestPayload(this.settings.model),
-        ),
-        signal: controller.signal,
-      });
-      if (!response.ok) {
-        throw new Error(`Agent 接口返回 HTTP ${response.status}。`);
-      }
-      const payload = (await response.json()) as unknown;
+      const payload =
+        this.settings.transport === "responses"
+          ? await this.postJson(
+              endpoint,
+              responsesConnectionTestPayload(this.settings.model),
+              controller.signal,
+            )
+          : await this.postChatWithStructuredFallback(
+              endpoint,
+              (mode) =>
+                chatCompletionsConnectionTestPayload(this.settings.model, mode),
+              controller.signal,
+            );
       const text =
         this.settings.transport === "responses"
           ? extractResponsesText(payload)
@@ -190,23 +188,24 @@ export class AgentClient {
         this.settings.transport === "responses"
           ? "/v1/responses"
           : "/v1/chat/completions";
-      const response = await fetch(joinUrl(this.settings.baseUrl, endpoint), {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${this.apiKey}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(
-          this.settings.transport === "responses"
-            ? responsesPayload(this.settings.model, request, repairErrors)
-            : chatCompletionsPayload(this.settings.model, request, repairErrors),
-        ),
-        signal: controller.signal,
-      });
-      if (!response.ok) {
-        throw new Error(`Agent 接口返回 HTTP ${response.status}。`);
-      }
-      const payload = (await response.json()) as unknown;
+      const payload =
+        this.settings.transport === "responses"
+          ? await this.postJson(
+              endpoint,
+              responsesPayload(this.settings.model, request, repairErrors),
+              controller.signal,
+            )
+          : await this.postChatWithStructuredFallback(
+              endpoint,
+              (mode) =>
+                chatCompletionsPayload(
+                  this.settings.model,
+                  request,
+                  repairErrors,
+                  mode,
+                ),
+              controller.signal,
+            );
       const text =
         this.settings.transport === "responses"
           ? extractResponsesText(payload)
@@ -220,6 +219,41 @@ export class AgentClient {
     } finally {
       clearTimeout(timer);
     }
+  }
+
+  private async postChatWithStructuredFallback(
+    endpoint: string,
+    buildBody: (mode: StructuredOutputMode) => object,
+    signal: AbortSignal,
+  ): Promise<unknown> {
+    try {
+      return await this.postJson(endpoint, buildBody("json_schema"), signal);
+    } catch (error) {
+      if (error instanceof AgentHttpError && error.status === 400) {
+        return this.postJson(endpoint, buildBody("json_object"), signal);
+      }
+      throw error;
+    }
+  }
+
+  private async postJson(
+    endpoint: string,
+    body: object,
+    signal: AbortSignal,
+  ): Promise<unknown> {
+    const response = await fetch(joinUrl(this.settings.baseUrl, endpoint), {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${this.apiKey}`,
+          "Content-Type": "application/json",
+        },
+      body: JSON.stringify(body),
+      signal,
+      });
+    if (!response.ok) {
+      throw new AgentHttpError(response.status);
+    }
+    return response.json() as Promise<unknown>;
   }
 }
 
@@ -240,25 +274,32 @@ function responsesConnectionTestPayload(model: string): object {
   };
 }
 
-function chatCompletionsConnectionTestPayload(model: string): object {
+function chatCompletionsConnectionTestPayload(
+  model: string,
+  mode: StructuredOutputMode = "json_schema",
+): object {
   return {
     model,
     messages: [
       { role: "system", content: "只返回 JSON，表示接口、模型和结构化输出可用。" },
       {
         role: "user",
-        content: "返回 ok=true，message 使用简体中文，长度不超过 20 个字。",
+        content:
+          "返回 JSON 对象: {\"ok\":true,\"message\":\"连接正常\"}。message 使用简体中文，长度不超过 20 个字。",
       },
     ],
     max_tokens: 80,
-    response_format: {
-      type: "json_schema",
-      json_schema: {
-        name: "agent_connection_test",
-        strict: true,
-        schema: CONNECTION_TEST_SCHEMA,
-      },
-    },
+    response_format:
+      mode === "json_schema"
+        ? {
+            type: "json_schema",
+            json_schema: {
+              name: "agent_connection_test",
+              strict: true,
+              schema: CONNECTION_TEST_SCHEMA,
+            },
+          }
+        : { type: "json_object" },
   };
 }
 
@@ -286,33 +327,42 @@ function chatCompletionsPayload(
   model: string,
   request: AnalysisRequest,
   repairErrors: string[],
+  mode: StructuredOutputMode = "json_schema",
 ): object {
   return {
     model,
     messages: [
       { role: "system", content: SYSTEM_PROMPT },
-      { role: "user", content: buildUserContent(request, repairErrors) },
+      { role: "user", content: buildUserContent(request, repairErrors, mode) },
     ],
-    response_format: {
-      type: "json_schema",
-      json_schema: {
-        name: "hearthstone_analysis",
-        strict: true,
-        schema: ANALYSIS_RESULT_SCHEMA,
-      },
-    },
+    response_format:
+      mode === "json_schema"
+        ? {
+            type: "json_schema",
+            json_schema: {
+              name: "hearthstone_analysis",
+              strict: true,
+              schema: ANALYSIS_RESULT_SCHEMA,
+            },
+          }
+        : { type: "json_object" },
   };
 }
 
 function buildUserContent(
   request: AnalysisRequest,
   repairErrors: string[],
+  mode: StructuredOutputMode = "json_schema",
 ): string {
   const repair =
     repairErrors.length > 0
       ? `\n上一次结果存在以下错误，请修复：${repairErrors.join("；")}`
       : "";
-  return `分析以下结构化局面，最多返回 ${request.maxCandidates} 条候选路线。${repair}\n${JSON.stringify(request)}`;
+  const schema =
+    mode === "json_object"
+      ? `\n返回 JSON 必须匹配此结构：${JSON.stringify(ANALYSIS_RESULT_SCHEMA)}`
+      : "";
+  return `分析以下结构化局面，最多返回 ${request.maxCandidates} 条候选路线。${repair}${schema}\n${JSON.stringify(request)}`;
 }
 
 function extractResponsesText(payload: unknown): string {
@@ -389,4 +439,10 @@ function joinUrl(baseUrl: string, path: string): string {
     return `${normalizedBase}${path.slice(3)}`;
   }
   return `${normalizedBase}${path}`;
+}
+
+class AgentHttpError extends Error {
+  constructor(readonly status: number) {
+    super(`Agent 接口返回 HTTP ${status}。`);
+  }
 }

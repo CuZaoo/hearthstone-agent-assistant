@@ -74,6 +74,48 @@ describe("AgentClient", () => {
     expect(body).toContain("agent_connection_test");
     expect(body).not.toContain("secret-key");
   });
+
+  it("falls back to json_object when chat completions rejects json_schema", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(new Response("bad schema", { status: 400 }))
+      .mockResolvedValueOnce(chatResponseFor(validResult()));
+    const client = new AgentClient(
+      { ...settings, transport: "chat-completions" },
+      "secret-key",
+      catalog,
+    );
+
+    const result = await client.analyze(request);
+
+    expect(result.summary).toBe("结束回合");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const firstBody = String(fetchMock.mock.calls[0]?.[1]?.body);
+    const secondBody = String(fetchMock.mock.calls[1]?.[1]?.body);
+    expect(firstBody).toContain("json_schema");
+    expect(secondBody).toContain("json_object");
+    expect(secondBody).toContain("返回 JSON 必须匹配此结构");
+    expect(secondBody).not.toContain("secret-key");
+  });
+
+  it("falls back to json_object for chat completions connection tests", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(new Response("bad schema", { status: 400 }))
+      .mockResolvedValueOnce(chatResponseFor({ ok: true, message: "连接正常" }));
+    const client = new AgentClient(
+      { ...settings, transport: "chat-completions" },
+      "secret-key",
+      catalog,
+    );
+
+    await expect(client.testConnection()).resolves.toBe("连接正常");
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const secondBody = String(fetchMock.mock.calls[1]?.[1]?.body);
+    expect(secondBody).toContain("json_object");
+    expect(secondBody).not.toContain("secret-key");
+  });
 });
 
 const settings = {

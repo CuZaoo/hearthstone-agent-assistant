@@ -13,6 +13,17 @@ Windows 11 桌面应用原型。应用只读取 `Power.log`、本地截图和用
 - API Key 仅保存到 Windows 凭据管理器
 - 截图仅用于本地校验，不发送给远程 Agent
 
+DeepSeek 可使用：
+
+```text
+接口地址: https://api.deepseek.com
+模型名称: deepseek-chat
+传输协议: Chat Completions API
+```
+
+如果 Chat Completions 服务不支持严格 `json_schema`，应用会自动降级到
+`json_object`，再用本地校验拦截非法路线。
+
 正式对局实时建议默认禁用。启用前必须确认已获得授权并接受账号与合规风险。
 
 ## 本地开发
