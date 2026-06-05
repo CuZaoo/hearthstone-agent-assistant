@@ -46,6 +46,10 @@ npm run package
 应用也会自动读取 Hearthstone Deck Tracker 的本地配置，并在炉石安装目录的
 `Logs\Hearthstone_日期时间\Power.log` 会话目录中切换到最新日志。
 
+如果应用提示“已发现最新炉石日志目录，但其中没有 Power.log”，说明当前炉石
+会话日志目录存在，但 `Power.log` 尚未生成。常见原因是尚未进入对局，或
+`log.config` 未手动启用 Power 日志。
+
 无需安装项目依赖即可诊断现有日志：
 
 ```powershell

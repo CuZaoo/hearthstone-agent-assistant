@@ -7,6 +7,16 @@ export interface PowerLogLocation {
   source: "configured" | "local-app-data" | "hearthstone-deck-tracker";
 }
 
+export interface PowerLogInspection {
+  location?: PowerLogLocation;
+  expectedPath: string;
+  latestSession?: {
+    path: string;
+    powerLogPath: string;
+    source: PowerLogLocation["source"];
+  };
+}
+
 export interface PowerLogLocatorOptions {
   automaticLocations?: boolean;
 }
@@ -15,9 +25,19 @@ export async function locatePowerLog(
   configuredPath: string,
   options: PowerLogLocatorOptions = {},
 ): Promise<PowerLogLocation | undefined> {
+  return (await inspectPowerLog(configuredPath, options)).location;
+}
+
+export async function inspectPowerLog(
+  configuredPath: string,
+  options: PowerLogLocatorOptions = {},
+): Promise<PowerLogInspection> {
   const expandedConfiguredPath = expandEnvironmentVariables(configuredPath);
   if (await isFile(expandedConfiguredPath)) {
-    return { path: expandedConfiguredPath, source: "configured" };
+    return {
+      location: { path: expandedConfiguredPath, source: "configured" },
+      expectedPath: expandedConfiguredPath,
+    };
   }
 
   const candidates: Array<{
@@ -48,18 +68,38 @@ export async function locatePowerLog(
   }
 
   const found: Array<PowerLogLocation & { modifiedMs: number }> = [];
+  const latestSessions: Array<
+    NonNullable<PowerLogInspection["latestSession"]> & { modifiedMs: number }
+  > = [];
   for (const candidate of dedupeRoots(candidates)) {
-    const result = await findLatestPowerLog(candidate.root);
-    if (result) {
-      found.push({ ...result, source: candidate.source });
+    const result = await inspectLogsRoot(candidate.root);
+    if (result.powerLog) {
+      found.push({ ...result.powerLog, source: candidate.source });
+    }
+    if (result.latestSession) {
+      latestSessions.push({
+        ...result.latestSession,
+        source: candidate.source,
+      });
     }
   }
 
   found.sort((left, right) => right.modifiedMs - left.modifiedMs);
   const latest = found[0];
-  return latest
-    ? { path: latest.path, source: latest.source }
-    : undefined;
+  latestSessions.sort((left, right) => right.modifiedMs - left.modifiedMs);
+  return {
+    location: latest
+      ? { path: latest.path, source: latest.source }
+      : undefined,
+    expectedPath: expandedConfiguredPath,
+    latestSession: latestSessions[0]
+      ? {
+          path: latestSessions[0].path,
+          powerLogPath: latestSessions[0].powerLogPath,
+          source: latestSessions[0].source,
+        }
+      : undefined,
+  };
 }
 
 export function expandEnvironmentVariables(path: string): string {
@@ -68,16 +108,19 @@ export function expandEnvironmentVariables(path: string): string {
   });
 }
 
-async function findLatestPowerLog(
+async function inspectLogsRoot(
   logsRoot: string,
-): Promise<{ path: string; modifiedMs: number } | undefined> {
+): Promise<{
+  powerLog?: { path: string; modifiedMs: number };
+  latestSession?: { path: string; powerLogPath: string; modifiedMs: number };
+}> {
   if (!existsSync(logsRoot)) {
-    return undefined;
+    return {};
   }
   const direct = join(logsRoot, "Power.log");
   const directStats = await safeStat(direct);
   if (directStats?.isFile()) {
-    return { path: direct, modifiedMs: directStats.mtimeMs };
+    return { powerLog: { path: direct, modifiedMs: directStats.mtimeMs } };
   }
 
   const sessionDirectories: Array<{
@@ -106,13 +149,20 @@ async function findLatestPowerLog(
   );
   const latestSession = sessionDirectories[0];
   if (!latestSession) {
-    return undefined;
+    return {};
   }
   const path = join(latestSession.path, "Power.log");
   const fileStats = await safeStat(path);
-  return fileStats?.isFile()
-    ? { path, modifiedMs: fileStats.mtimeMs }
-    : undefined;
+  return {
+    powerLog: fileStats?.isFile()
+      ? { path, modifiedMs: fileStats.mtimeMs }
+      : undefined,
+    latestSession: {
+      path: latestSession.path,
+      powerLogPath: path,
+      modifiedMs: latestSession.modifiedMs,
+    },
+  };
 }
 
 async function readHearthstoneDeckTrackerInstallRoot(): Promise<string | undefined> {

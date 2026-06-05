@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it } from "vitest";
-import { locatePowerLog } from "../src/main/power-log-locator";
+import { inspectPowerLog, locatePowerLog } from "../src/main/power-log-locator";
 
 const temporaryRoots: string[] = [];
 
@@ -37,6 +37,24 @@ describe("locatePowerLog", () => {
     await expect(
       locatePowerLog(join(logs, "Power.log"), { automaticLocations: false }),
     ).resolves.toBeUndefined();
+  });
+
+  it("reports the latest session path when Power.log has not been created yet", async () => {
+    const root = await createTemporaryRoot();
+    const logs = join(root, "Logs");
+    const session = join(logs, "Hearthstone_2025_01_02_00_00_00");
+    await mkdir(session, { recursive: true });
+
+    await expect(
+      inspectPowerLog(join(logs, "Power.log"), { automaticLocations: false }),
+    ).resolves.toMatchObject({
+      location: undefined,
+      latestSession: {
+        path: session,
+        powerLogPath: join(session, "Power.log"),
+        source: "configured",
+      },
+    });
   });
 });
 

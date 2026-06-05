@@ -25,7 +25,7 @@ import { CredentialStore } from "./credential-store.js";
 import { HistoryDatabase } from "./history-database.js";
 import {
   expandEnvironmentVariables,
-  locatePowerLog,
+  inspectPowerLog,
 } from "./power-log-locator.js";
 import { SettingsStore } from "./settings-store.js";
 import { VisualValidator } from "./visual-validator.js";
@@ -190,7 +190,8 @@ async function startWatcher(): Promise<void> {
 }
 
 async function refreshWatcher(): Promise<void> {
-  const location = await locatePowerLog(settings.powerLogPath);
+  const inspection = await inspectPowerLog(settings.powerLogPath);
+  const location = inspection.location;
   const path =
     location?.path ?? expandEnvironmentVariables(settings.powerLogPath);
   if (watcher?.path === path) {
@@ -205,9 +206,7 @@ async function refreshWatcher(): Promise<void> {
   logStatus = {
     available: Boolean(location),
     path,
-    message: location
-      ? `已发现 Power.log：${location.source}`
-      : "未找到 Power.log，请启动炉石并确认已手动启用日志。",
+    message: powerLogStatusMessage(inspection),
   };
   watcher = new PowerLogWatcher(path, parser);
   watcher.on("status", (nextStatus) => {
@@ -234,6 +233,18 @@ async function refreshWatcher(): Promise<void> {
   });
   watcher.start();
   broadcastStatus();
+}
+
+function powerLogStatusMessage(
+  inspection: Awaited<ReturnType<typeof inspectPowerLog>>,
+): string {
+  if (inspection.location) {
+    return `已发现 Power.log：${inspection.location.source}`;
+  }
+  if (inspection.latestSession) {
+    return `已发现最新炉石日志目录，但其中没有 Power.log：${inspection.latestSession.powerLogPath}。请确认已手动启用 Power.log；未进入对局时也可能暂未生成。`;
+  }
+  return "未找到 Power.log，请启动炉石并确认已手动启用日志。";
 }
 
 async function testAgentConnection(): Promise<AppStatus> {
