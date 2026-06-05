@@ -13,7 +13,7 @@ export function sanitizeSnapshotForAgent(
     ...snapshot,
     self: sanitizePlayer(snapshot.self, catalog),
     opponent: sanitizePlayer(snapshot.opponent, catalog),
-    visibleHistory: snapshot.visibleHistory.map((event) => ({
+    visibleHistory: snapshot.visibleHistory.slice(-12).map((event) => ({
       id: event.id,
       timestamp: event.timestamp,
       type: event.type,

@@ -29,7 +29,7 @@ export class VisualValidator {
 
     if (!isSupportedResolution(size.width, size.height)) {
       errors.push(
-        `不支持的截图分辨率 ${resolution}，首版仅支持 1920×1080 或 2560×1440。`,
+        `不支持的截图分辨率 ${resolution}，首版仅支持 1920×1080、2560×1440 或对应最大化窗口内容尺寸。`,
       );
       return { ok: false, errors, warnings, resolution, matchedEntityIds };
     }
@@ -39,6 +39,7 @@ export class VisualValidator {
     }
 
     const slots = buildSlots(snapshot, size.width, size.height);
+    const mismatchedEntityIds: number[] = [];
     for (const slot of slots) {
       const expectedHash = catalog.get(slot.cardId)?.imageHash;
       if (!expectedHash) {
@@ -50,12 +51,28 @@ export class VisualValidator {
       if (hammingDistance(expectedHash, actualHash) <= 12) {
         matchedEntityIds.push(slot.entityId);
       } else {
-        errors.push(`实体 ${slot.entityId} 的截图与日志卡牌不一致。`);
+        mismatchedEntityIds.push(slot.entityId);
       }
     }
 
-    if (slots.length > 0 && matchedEntityIds.length === 0 && errors.length === 0) {
-      errors.push("没有可用的视觉特征，无法确认当前局面。");
+    if (mismatchedEntityIds.length > 0) {
+      if (matchedEntityIds.length === 0) {
+        warnings.push(
+          `视觉校验坐标尚未适配当前窗口，${mismatchedEntityIds.length} 个实体未能匹配；本次仅使用 Power.log 快照分析。`,
+        );
+      } else {
+        for (const entityId of mismatchedEntityIds) {
+          errors.push(`实体 ${entityId} 的截图与日志卡牌不一致。`);
+        }
+      }
+    }
+    if (
+      slots.length > 0 &&
+      matchedEntityIds.length === 0 &&
+      mismatchedEntityIds.length === 0 &&
+      errors.length === 0
+    ) {
+      warnings.push("没有可用的视觉特征，本次仅使用 Power.log 快照分析。");
     }
     return {
       ok: errors.length === 0,
@@ -83,7 +100,9 @@ function artRegion(slot: Slot) {
 function isSupportedResolution(width: number, height: number): boolean {
   return (
     (width === 1920 && height === 1080) ||
-    (width === 2560 && height === 1440)
+    (width === 2560 && height === 1440) ||
+    (width === 1920 && height >= 1030 && height < 1080) ||
+    (width === 2560 && height >= 1350 && height < 1440)
   );
 }
 

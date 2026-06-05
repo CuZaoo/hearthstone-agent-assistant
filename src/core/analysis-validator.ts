@@ -46,7 +46,11 @@ export function validateSnapshotForAnalysis(
     (card) => card.cardId && !catalog.has(card.cardId),
   );
   if (unknownCards.length > 0) {
-    errors.push(`卡牌快照缺少 ${unknownCards.length} 张可见卡牌。`);
+    errors.push(
+      `卡牌快照缺少 ${unknownCards.length} 张可见卡牌：${unknownCards
+        .map((card) => `${card.name ?? "未知"}(${card.cardId})`)
+        .join("、")}。`,
+    );
   }
   if (visibleCards.some((card) => !card.cardId)) {
     warnings.push("部分可见实体缺少卡牌 ID，建议可能不完整。");

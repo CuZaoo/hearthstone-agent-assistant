@@ -177,4 +177,39 @@ describe("PowerLogParser", () => {
       "CATA_139te",
     );
   });
+
+  it("parses full entity updates with attached hero descriptions", () => {
+    const parser = new PowerLogParser();
+
+    parser.consumeLine(
+      "D 12:00:00.001 GameState.DebugPrintPower() - Player EntityID=1 PlayerID=1 GameAccountId=[hi=1 lo=2]",
+    );
+    parser.consumeLine(
+      "D 12:00:00.002 GameState.DebugPrintPower() - Player EntityID=2 PlayerID=2 GameAccountId=[hi=0 lo=0]",
+    );
+    parser.consumeLine(
+      "D 12:00:00.003 GameState.DebugPrintPower() - FULL_ENTITY - Updating [entityName=泰兰德·语风 id=74 zone=PLAY zonePos=0 cardId=HERO_09a player=1] CardID=HERO_09a",
+    );
+    parser.consumeLine(
+      "D 12:00:00.003 GameState.DebugPrintPower() -         tag=CARDTYPE value=HERO",
+    );
+    parser.consumeLine(
+      "D 12:00:00.003 GameState.DebugPrintPower() -         tag=HEALTH value=30",
+    );
+    parser.consumeLine(
+      "D 12:00:00.003 GameState.DebugPrintPower() - FULL_ENTITY - Updating [entityName=古尔丹 id=76 zone=PLAY zonePos=0 cardId=HERO_07 player=2] CardID=HERO_07",
+    );
+    parser.consumeLine(
+      "D 12:00:00.004 GameState.DebugPrintPower() -         tag=CARDTYPE value=HERO",
+    );
+    parser.consumeLine(
+      "D 12:00:00.005 GameState.DebugPrintPower() -         tag=HEALTH value=30",
+    );
+
+    const snapshot = parser.snapshot("test-catalog");
+
+    expect(snapshot.opponent.hero.cardId).toBe("HERO_07");
+    expect(snapshot.opponent.hero.name).toBe("古尔丹");
+    expect(snapshot.opponent.hero.health).toBe(30);
+  });
 });

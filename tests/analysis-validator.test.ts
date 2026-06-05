@@ -177,4 +177,28 @@ describe("validateSnapshotForAnalysis", () => {
     expect(report.ok).toBe(false);
     expect(report.errors.join(" ")).toContain("build");
   });
+
+  it("reports missing visible card ids and names", () => {
+    const report = validateSnapshotForAnalysis(
+      {
+        ...snapshot,
+        self: {
+          ...snapshot.self,
+          hand: [
+            ...snapshot.self.hand,
+            {
+              entityId: 11,
+              cardId: "MISSING_CARD",
+              name: "缺失卡",
+              tags: {},
+            },
+          ],
+        },
+      },
+      catalog,
+    );
+
+    expect(report.ok).toBe(false);
+    expect(report.errors.join(" ")).toContain("缺失卡(MISSING_CARD)");
+  });
 });

@@ -11,12 +11,25 @@ import type {
 export function App() {
   const overlay = new URLSearchParams(window.location.search).get("view") === "overlay";
   const [status, setStatus] = useState<AppStatus>();
+  const [bootError, setBootError] = useState<string>();
 
   useEffect(() => {
-    void window.hearthstoneAgent.getStatus().then(setStatus);
+    void window.hearthstoneAgent
+      .getStatus()
+      .then(setStatus)
+      .catch((error: unknown) =>
+        setBootError(error instanceof Error ? error.message : "启动失败"),
+      );
     return window.hearthstoneAgent.onStatusChanged(setStatus);
   }, []);
 
+  if (bootError) {
+    return (
+      <div className={overlay ? "overlay-shell" : "app-shell"}>
+        启动失败：{bootError}
+      </div>
+    );
+  }
   if (!status) {
     return <div className={overlay ? "overlay-shell" : "app-shell"}>正在启动…</div>;
   }

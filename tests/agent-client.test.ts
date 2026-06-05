@@ -97,10 +97,9 @@ describe("AgentClient", () => {
     );
   });
 
-  it("falls back to json_object when chat completions rejects json_schema", async () => {
+  it("uses json_object directly for chat completions analysis", async () => {
     const fetchMock = vi
       .spyOn(globalThis, "fetch")
-      .mockResolvedValueOnce(new Response("bad schema", { status: 400 }))
       .mockResolvedValueOnce(chatResponseFor(validResult()));
     const client = new AgentClient(
       { ...settings, transport: "chat-completions" },
@@ -111,13 +110,44 @@ describe("AgentClient", () => {
     const result = await client.analyze(request);
 
     expect(result.summary).toBe("结束回合");
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    const firstBody = String(fetchMock.mock.calls[0]?.[1]?.body);
-    const secondBody = String(fetchMock.mock.calls[1]?.[1]?.body);
-    expect(firstBody).toContain("json_schema");
-    expect(secondBody).toContain("json_object");
-    expect(secondBody).toContain("返回 JSON 必须匹配此结构");
-    expect(secondBody).not.toContain("secret-key");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const body = String(fetchMock.mock.calls[0]?.[1]?.body);
+    expect(body).toContain("json_object");
+    expect(body).toContain("不要返回格式定义");
+    expect(body).not.toContain("additionalProperties");
+    expect(body).toContain("max_tokens");
+    expect(body).not.toContain("secret-key");
+  });
+
+  it("parses json from chat completions text with surrounding prose", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                content: `好的，结果如下：\n\`\`\`json\n${JSON.stringify(validResult())}\n\`\`\``,
+              },
+            },
+          ],
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+    );
+    const client = new AgentClient(
+      { ...settings, transport: "chat-completions" },
+      "secret-key",
+      catalog,
+    );
+
+    await expect(client.analyze(request)).resolves.toMatchObject({
+      summary: "结束回合",
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it("falls back to json_object for chat completions connection tests", async () => {

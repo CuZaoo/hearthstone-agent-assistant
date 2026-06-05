@@ -5,6 +5,16 @@
   "gameBuild": 243002,
   "entries": [
     {
+      "cardId": "BAR_COIN1",
+      "name": "幸运币",
+      "text": "在本回合中，获得一个\n法力水晶。",
+      "cost": 0,
+      "cardType": "SPELL",
+      "collectible": false,
+      "standard": true,
+      "imageHash": "0704829382a1a9b1"
+    },
+    {
       "cardId": "BG31_BOBt",
       "name": "冻结商店",
       "text": "<b>冻结</b>所有敌方随从。",

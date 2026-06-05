@@ -99,9 +99,7 @@ app.on("will-quit", () => {
 
 function createWindows(): void {
   const preload = join(import.meta.dirname, "preload.cjs");
-  const rendererUrl =
-    process.env.VITE_DEV_SERVER_URL ??
-    (!app.isPackaged ? "http://localhost:5173" : undefined);
+  const rendererUrl = process.env.VITE_DEV_SERVER_URL;
   const rendererFile = join(app.getAppPath(), "dist", "renderer", "index.html");
 
   mainWindow = new BrowserWindow({

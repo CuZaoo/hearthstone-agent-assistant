@@ -37,6 +37,15 @@ npm test
 npm run dev
 ```
 
+实战联调不需要每次打包。修改主进程、解析器、卡牌快照或视觉校验后，使用源码版启动：
+
+```powershell
+npm run build
+npm run start:built
+```
+
+源码版会读取工作区内的 `assets` 和 `dist`，适合边打炉石边快速验证。
+
 生成 Windows 测试安装器：
 
 ```powershell

@@ -13,7 +13,7 @@ const SYSTEM_PROMPT = `你是炉石传说标准构筑对局分析助手。
 你只能使用请求中明确提供的可见信息，不得假设对手手牌、牌库顺序或随机结果。
 你的目标是提供当前回合的高质量候选路线，不得声称路线是数学最优。
 每条路线必须引用请求中存在的实体 ID，并说明理由、主要风险与置信度。
-只返回符合 JSON Schema 的结果。`;
+只返回一个 JSON 对象，不要 Markdown，不要代码块，不要解释性前后缀。`;
 
 const ANALYSIS_RESULT_SCHEMA = {
   type: "object",
@@ -195,15 +195,14 @@ export class AgentClient {
               responsesPayload(this.settings.model, request, repairErrors),
               controller.signal,
             )
-          : await this.postChatWithStructuredFallback(
+          : await this.postJson(
               endpoint,
-              (mode) =>
-                chatCompletionsPayload(
-                  this.settings.model,
-                  request,
-                  repairErrors,
-                  mode,
-                ),
+              chatCompletionsPayload(
+                this.settings.model,
+                request,
+                repairErrors,
+                "json_object",
+              ),
               controller.signal,
             );
       const text =
@@ -331,6 +330,9 @@ function chatCompletionsPayload(
 ): object {
   return {
     model,
+    temperature: 0.2,
+    max_tokens: 1_200,
+    stream: false,
     messages: [
       { role: "system", content: SYSTEM_PROMPT },
       { role: "user", content: buildUserContent(request, repairErrors, mode) },
@@ -360,7 +362,31 @@ function buildUserContent(
       : "";
   const schema =
     mode === "json_object"
-      ? `\n返回 JSON 必须匹配此结构：${JSON.stringify(ANALYSIS_RESULT_SCHEMA)}`
+      ? `\n只返回 JSON 对象，字段为：
+{
+  "snapshotRevision": "${request.snapshot.revision}",
+  "summary": "简短中文总结",
+  "warnings": ["可为空"],
+  "candidates": [
+    {
+      "rank": 1,
+      "actions": [
+        {
+          "type": "play-card | attack | hero-power | trade | end-turn",
+          "sourceEntityId": 数字或 null,
+          "sourceCardId": "字符串或 null",
+          "targetEntityId": 数字或 null,
+          "targetSide": "self | opponent | null",
+          "description": "中文动作"
+        }
+      ],
+      "rationale": "中文理由",
+      "risks": ["可为空"],
+      "confidence": 0到1
+    }
+  ]
+}
+不要返回格式定义，不要解释字段含义，只返回本局分析结果。`
       : "";
   return `分析以下结构化局面，最多返回 ${request.maxCandidates} 条候选路线。${repair}${schema}\n${JSON.stringify(request)}`;
 }
@@ -396,7 +422,7 @@ function extractChatCompletionsText(payload: unknown): string {
 
 function parseAnalysisResult(text: string): AnalysisResult {
   try {
-    const parsed = JSON.parse(text) as AnalysisResult;
+    const parsed = JSON.parse(extractJsonObject(text)) as AnalysisResult;
     return {
       ...parsed,
       candidates: parsed.candidates.map((candidate) => ({
@@ -420,7 +446,10 @@ function parseConnectionTestResult(text: string): {
   message: string;
 } {
   try {
-    const parsed = JSON.parse(text) as { ok?: unknown; message?: unknown };
+    const parsed = JSON.parse(extractJsonObject(text)) as {
+      ok?: unknown;
+      message?: unknown;
+    };
     if (typeof parsed.ok !== "boolean" || typeof parsed.message !== "string") {
       throw new Error("Agent 连接测试返回结构无效。");
     }
@@ -431,6 +460,56 @@ function parseConnectionTestResult(text: string): {
     }
     throw new Error("Agent 连接测试返回了无效 JSON。");
   }
+}
+
+function extractJsonObject(text: string): string {
+  const trimmed = text.trim();
+  if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
+    return trimmed;
+  }
+
+  const fenced = trimmed.match(/```(?:json)?\s*(?<json>\{[\s\S]*?\})\s*```/i)
+    ?.groups?.json;
+  if (fenced) {
+    return fenced;
+  }
+
+  const start = trimmed.indexOf("{");
+  if (start === -1) {
+    throw new Error("Agent 返回了无效 JSON。");
+  }
+
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let index = start; index < trimmed.length; index += 1) {
+    const char = trimmed[index];
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (char === "\\") {
+      escaped = inString;
+      continue;
+    }
+    if (char === '"') {
+      inString = !inString;
+      continue;
+    }
+    if (inString) {
+      continue;
+    }
+    if (char === "{") {
+      depth += 1;
+    } else if (char === "}") {
+      depth -= 1;
+      if (depth === 0) {
+        return trimmed.slice(start, index + 1);
+      }
+    }
+  }
+
+  throw new Error("Agent 返回了无效 JSON。");
 }
 
 function joinUrl(baseUrl: string, path: string): string {

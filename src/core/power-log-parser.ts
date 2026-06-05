@@ -50,7 +50,7 @@ const TAG_LINE =
 const SHOW_LINE =
   /SHOW_ENTITY - Updating Entity=(?:\[(?<entity>.*)\]|(?<simple>\d+)) CardID=(?<cardId>[A-Za-z0-9_]+)/;
 const FULL_LINE =
-  /FULL_ENTITY - Creating ID=(?<id>\d+) CardID=(?<cardId>[A-Za-z0-9_]*)/;
+  /FULL_ENTITY - (?:Creating ID=(?<id>\d+)|Updating \[(?<entity>.*)\]) CardID=(?<cardId>[A-Za-z0-9_]*)/;
 const PLAYER_LINE =
   /Player EntityID=(?<entityId>\d+) PlayerID=(?<playerId>\d+) GameAccountId=\[hi=(?<hi>\d+) lo=(?<lo>\d+)\]/;
 const GAME_ENTITY_LINE = /GameEntity EntityID=(?<entityId>\d+)/;
@@ -143,7 +143,12 @@ export class PowerLogParser {
       return;
     }
 
-    const eventId = createHash("sha1").update(line).digest("hex");
+    const entityTag = line.match(ENTITY_TAG_LINE);
+    const eventKey =
+      entityTag && this.state.currentEntityId !== undefined
+        ? `${this.state.currentEntityId}|${line}`
+        : line;
+    const eventId = createHash("sha1").update(eventKey).digest("hex");
     if (this.state.processedEventIds.has(eventId)) {
       return;
     }
@@ -186,11 +191,15 @@ export class PowerLogParser {
 
     const full = line.match(FULL_LINE);
     if (full?.groups) {
-      const entityId = Number(full.groups.id);
-      const entity = this.getEntity(entityId);
-      entity.cardId = full.groups.cardId || undefined;
-      this.state.currentEntityId = entityId;
-      this.bumpRevision();
+      const entityId = full.groups.id
+        ? Number(full.groups.id)
+        : this.entityIdFromGroups(full.groups);
+      if (entityId !== undefined) {
+        const entity = this.getEntity(entityId);
+        entity.cardId = full.groups.cardId || entity.cardId;
+        this.state.currentEntityId = entityId;
+        this.bumpRevision();
+      }
       return;
     }
 
@@ -247,7 +256,6 @@ export class PowerLogParser {
       return;
     }
 
-    const entityTag = line.match(ENTITY_TAG_LINE);
     const entityTagName = entityTag?.groups?.tag;
     const entityTagValue = entityTag?.groups?.value;
     if (
