@@ -106,4 +106,56 @@ describe("PowerLogParser", () => {
 
     expect(parser.snapshot("test-catalog").gameMode).toBe("unsupported");
   });
+
+  it("preserves lowercase suffixes in visible card ids", () => {
+    const parser = new PowerLogParser();
+
+    parser.consumeLine(
+      "D 12:00:00.001 GameState.DebugPrintPower() - Player EntityID=1 PlayerID=1 GameAccountId=[hi=1 lo=2]",
+    );
+    parser.consumeLine(
+      "D 12:00:00.002 GameState.DebugPrintPower() - Player EntityID=2 PlayerID=2 GameAccountId=[hi=0 lo=0]",
+    );
+    parser.consumeLine(
+      "D 12:00:00.003 GameState.DebugPrintPower() - FULL_ENTITY - Creating ID=10 CardID=CATA_130e",
+    );
+    parser.consumeLine(
+      "D 12:00:00.004 GameState.DebugPrintPower() - TAG_CHANGE Entity=10 tag=CONTROLLER value=1",
+    );
+    parser.consumeLine(
+      "D 12:00:00.005 GameState.DebugPrintPower() - TAG_CHANGE Entity=10 tag=ZONE value=HAND",
+    );
+    parser.consumeLine(
+      "D 12:00:00.006 GameState.DebugPrintPower() - FULL_ENTITY - Creating ID=11 CardID=EDR_001t",
+    );
+    parser.consumeLine(
+      "D 12:00:00.007 GameState.DebugPrintPower() - TAG_CHANGE Entity=11 tag=CONTROLLER value=1",
+    );
+    parser.consumeLine(
+      "D 12:00:00.008 GameState.DebugPrintPower() - TAG_CHANGE Entity=11 tag=ZONE value=PLAY",
+    );
+    parser.consumeLine(
+      "D 12:00:00.009 GameState.DebugPrintPower() - TAG_CHANGE Entity=11 tag=CARDTYPE value=MINION",
+    );
+
+    const snapshot = parser.snapshot("test-catalog");
+
+    expect(snapshot.self.hand[0]?.cardId).toBe("CATA_130e");
+    expect(snapshot.self.board[0]?.cardId).toBe("EDR_001t");
+  });
+
+  it("preserves lowercase suffixes from attached entity descriptions", () => {
+    const parser = new PowerLogParser();
+
+    parser.consumeLine(
+      "D 12:00:00.001 GameState.DebugPrintPower() - Player EntityID=1 PlayerID=1 GameAccountId=[hi=1 lo=2]",
+    );
+    parser.consumeLine(
+      "D 12:00:00.002 GameState.DebugPrintPower() - TAG_CHANGE Entity=[entityName=测试 id=20 zone=HAND zonePos=1 cardId=CATA_139te player=1] tag=ZONE value=HAND",
+    );
+
+    expect(parser.snapshot("test-catalog").self.hand[0]?.cardId).toBe(
+      "CATA_139te",
+    );
+  });
 });

@@ -48,9 +48,9 @@ interface ParserState {
 const TAG_LINE =
   /TAG_CHANGE Entity=(?:\[(?<entity>.*)\]|(?<simple>\d+)|(?<named>[^\s]+)) tag=(?<tag>[A-Z0-9_]+) value=(?<value>[^\s]+)/;
 const SHOW_LINE =
-  /SHOW_ENTITY - Updating Entity=(?:\[(?<entity>.*)\]|(?<simple>\d+)) CardID=(?<cardId>[A-Z0-9_]+)/;
+  /SHOW_ENTITY - Updating Entity=(?:\[(?<entity>.*)\]|(?<simple>\d+)) CardID=(?<cardId>[A-Za-z0-9_]+)/;
 const FULL_LINE =
-  /FULL_ENTITY - Creating ID=(?<id>\d+) CardID=(?<cardId>[A-Z0-9_]*)/;
+  /FULL_ENTITY - Creating ID=(?<id>\d+) CardID=(?<cardId>[A-Za-z0-9_]*)/;
 const PLAYER_LINE =
   /Player EntityID=(?<entityId>\d+) PlayerID=(?<playerId>\d+) GameAccountId=\[hi=(?<hi>\d+) lo=(?<lo>\d+)\]/;
 const GAME_ENTITY_LINE = /GameEntity EntityID=(?<entityId>\d+)/;
@@ -503,7 +503,7 @@ export class PowerLogParser {
       const id = Number(idMatch[1]);
       const entity = this.getEntity(id);
       entity.name ??= source.match(/entityName=([^\]]+?)(?:\s+id=|$)/)?.[1];
-      entity.cardId ??= source.match(/cardId=([A-Z0-9_]+)/)?.[1];
+      entity.cardId ??= source.match(/cardId=([A-Za-z0-9_]+)/)?.[1];
       entity.zone ??= source.match(/zone=([A-Z]+)/)?.[1];
       const zonePosition = source.match(/zonePos=(\d+)/)?.[1];
       const controller = source.match(/player=(\d+)/)?.[1];
