@@ -70,6 +70,11 @@ function normalizeSettings(settings: AppSettings): AppSettings {
     transport: activeAgent.transport,
     timeoutMs: activeAgent.timeoutMs,
     maxCandidates: Math.min(5, Math.max(1, settings.maxCandidates)),
+    guideDismissed: settings.guideDismissed ?? DEFAULT_SETTINGS.guideDismissed,
+    language: settings.language ?? DEFAULT_SETTINGS.language,
+    multiAgentCompareEnabled: settings.multiAgentCompareEnabled ?? DEFAULT_SETTINGS.multiAgentCompareEnabled,
+    winRateEstimationEnabled: settings.winRateEstimationEnabled ?? DEFAULT_SETTINGS.winRateEstimationEnabled,
+    hotkeys: settings.hotkeys ?? DEFAULT_SETTINGS.hotkeys,
   };
 }
 

@@ -27,7 +27,7 @@ export function validateSnapshotForAnalysis(
     warnings.push("无法确认卡牌快照与当前游戏 build 是否一致。");
   }
   if (snapshot.gameMode !== "standard") {
-    errors.push("首版仅支持标准构筑模式。");
+    warnings.push("当前模式非标准构筑，部分卡牌可能存在日志不完整的风险。");
   }
   if (snapshot.activePlayer !== "self") {
     errors.push("当前不是己方回合。");

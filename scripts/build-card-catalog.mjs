@@ -1,64 +1,45 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
-const STANDARD_VISIBLE_TOKEN_IDS = new Set([
-  "AT_037t",
-  "BAR_COIN1",
-]);
-
 const args = parseArgs(process.argv.slice(2));
-if (!args.cards || !args.sets || !args.out) {
+if ((!args["cards-zh"] && !args["cards-en"]) || !args.out) {
   fail(
-    "用法: node scripts/build-card-catalog.mjs --cards <cards.json> --sets <standard-sets.json> --out <catalog.json> [--features <features.json>] [--version <version>]",
+    "用法: node scripts/build-card-catalog.mjs --cards-zh <cards-zh.json> [--cards-en <cards-en.json>] [--out <catalog.json>] [--features <features.json>] [--version <version>] [--game-build <build>]",
   );
 }
 
-const cardsPayload = await readJson(args.cards);
-const standardSets = normalizeStandardSets(await readJson(args.sets));
 const features = args.features
   ? normalizeFeatures(await readJson(args.features))
   : new Map();
-const cards = normalizeCards(cardsPayload);
-const entries = cards
-  .filter((card) => isStandardCard(card, standardSets))
-  .map((card) => ({
+
+const cardsZh = args["cards-zh"] ? normalizeCards(await readJson(args["cards-zh"])) : [];
+const cardsEn = args["cards-en"] ? normalizeCards(await readJson(args["cards-en"])) : [];
+const primaryCards = cardsZh.length > 0 ? cardsZh : cardsEn;
+const secondaryCards = cardsZh.length > 0 ? cardsEn : [];
+
+const entries = primaryCards.map((card) => {
+  const enCard = secondaryCards.find((c) => c.id === card.id);
+  return {
     cardId: card.id,
     name: card.name,
     text: card.text ?? "",
+    nameZh: cardsZh.length > 0 ? card.name : undefined,
+    nameEn: enCard?.name ?? (cardsEn.length > 0 ? card.name : undefined),
+    textZh: cardsZh.length > 0 ? (card.text ?? "") : undefined,
+    textEn: enCard?.text ?? (cardsEn.length > 0 ? (card.text ?? "") : undefined),
     cost: card.manaCost ?? card.cost ?? 0,
     attack: card.attack,
     health: card.health,
     cardType: normalizeCardType(card.cardType ?? card.type, card.cardTypeId),
     collectible: Boolean(card.collectible),
-    standard: true,
     imageHash: features.get(card.id),
-  }))
-  .sort((left, right) => left.cardId.localeCompare(right.cardId));
-const entryIds = new Set(entries.map((entry) => entry.cardId));
-for (const card of cards.filter((card) => STANDARD_VISIBLE_TOKEN_IDS.has(card.id))) {
-  if (entryIds.has(card.id)) {
-    continue;
-  }
-  entries.push({
-    cardId: card.id,
-    name: card.name,
-    text: card.text ?? "",
-    cost: card.manaCost ?? card.cost ?? 0,
-    attack: card.attack,
-    health: card.health,
-    cardType: normalizeCardType(card.cardType ?? card.type, card.cardTypeId),
-    collectible: Boolean(card.collectible),
-    standard: true,
-    imageHash: features.get(card.id),
-  });
-  entryIds.add(card.id);
-}
-entries.sort((left, right) => left.cardId.localeCompare(right.cardId));
+  };
+}).sort((a, b) => a.cardId.localeCompare(b.cardId));
 
 const output = {
   version: args.version ?? new Date().toISOString().slice(0, 10),
   generatedAt: new Date().toISOString(),
-  locale: "zhCN",
+  locale: cardsZh.length > 0 ? "zhCN" : "enUS",
   gameBuild: args["game-build"] ? Number(args["game-build"]) : undefined,
   entries,
 };
@@ -66,10 +47,10 @@ const output = {
 const missingFeatures = entries.filter((entry) => !entry.imageHash);
 await writeFile(resolve(args.out), `${JSON.stringify(output, null, 2)}\n`, "utf8");
 
-console.log(`已写入 ${entries.length} 张标准卡牌: ${resolve(args.out)}`);
+console.log(`已写入 ${entries.length} 张卡牌: ${resolve(args.out)}`);
 console.log(`缺少视觉特征: ${missingFeatures.length}`);
 if (entries.length === 0) {
-  fail("没有找到属于指定标准卡池的卡牌，请检查卡牌 JSON 与 set ID 清单。");
+  fail("未找到任何卡牌。");
 }
 
 function parseArgs(values) {
@@ -98,32 +79,7 @@ function normalizeCards(payload) {
     (card) =>
       card &&
       typeof card.id === "string" &&
-      typeof card.name === "string" &&
-      (Number.isInteger(card.cardSetId) || typeof card.set === "string"),
-  );
-}
-
-function normalizeStandardSets(payload) {
-  const values = Array.isArray(payload)
-    ? payload
-    : (payload.standardSetIds ?? payload.standardSets);
-  if (!Array.isArray(values)) {
-    fail("标准卡池 JSON 必须是 set ID 或 set 名称数组。");
-  }
-  return {
-    ids: new Set(values.map(Number).filter(Number.isInteger)),
-    names: new Set(
-      values
-        .filter((value) => typeof value === "string")
-        .map((value) => value.toUpperCase()),
-    ),
-  };
-}
-
-function isStandardCard(card, standardSets) {
-  return (
-    (Number.isInteger(card.cardSetId) && standardSets.ids.has(card.cardSetId)) ||
-    (typeof card.set === "string" && standardSets.names.has(card.set.toUpperCase()))
+      typeof card.name === "string",
   );
 }
 

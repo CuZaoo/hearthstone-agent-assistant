@@ -24,6 +24,14 @@ export const DEFAULT_SETTINGS: AppSettings = {
   overlayVisible: true,
   liveRecommendationsEnabled: false,
   autoAnalyze: true,
+  guideDismissed: false,
+  language: "zhCN",
+  multiAgentCompareEnabled: false,
+  winRateEstimationEnabled: false,
+  hotkeys: {
+    analyze: "CommandOrControl+Shift+A",
+    toggleOverlay: "CommandOrControl+Shift+O",
+  },
 };
 
 export function emptyPlayerState(): PlayerState {

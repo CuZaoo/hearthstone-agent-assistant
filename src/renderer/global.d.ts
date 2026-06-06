@@ -14,10 +14,14 @@ declare global {
       analyze(): Promise<AppStatus>;
       testAgentConnection(): Promise<AppStatus>;
       toggleOverlay(): Promise<AppStatus>;
+      showMainWindow(): Promise<void>;
     listHistory(): Promise<AnalysisResult[]>;
     getLastAgentRequest(): Promise<any>;
     stopAnalysis(): Promise<AppStatus>;
     onStatusChanged(callback: (status: AppStatus) => void): () => void;
+    minimizeWindow(): Promise<void>;
+    maximizeWindow(): Promise<void>;
+    closeWindow(): Promise<void>;
     };
   }
 }

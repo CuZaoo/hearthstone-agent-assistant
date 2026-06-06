@@ -1,0 +1,521 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>方案B - 三列仪表盘</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,.06); border-radius: 999px; }
+
+body {
+  font-family: 'Inter', 'Microsoft YaHei UI', sans-serif;
+  background: #0b0d14;
+  color: #e8edf5;
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 24px;
+  background-image:
+    radial-gradient(ellipse at 70% 0, rgba(116,92,198,.06), transparent 50%),
+    radial-gradient(ellipse at 30% 100%, rgba(0,188,212,.04), transparent 40%);
+}
+
+/* ===== DASHBOARD ===== */
+.dashboard {
+  width: 1000px;
+  height: 700px;
+  background: linear-gradient(135deg, rgba(14,16,26,.96), rgba(10,12,20,.98));
+  border: 1px solid rgba(255,255,255,.06);
+  border-radius: 16px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 24px 80px rgba(0,0,0,.55);
+}
+
+/* Top header */
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 20px;
+  border-bottom: 1px solid rgba(255,255,255,.05);
+  background: rgba(0,0,0,.2);
+}
+.header-left { display: flex; align-items: center; gap: 14px; }
+.header-left .logo {
+  font-weight: 800;
+  font-size: 15px;
+  letter-spacing: -.02em;
+  color: #5eead4;
+  text-transform: uppercase;
+}
+.header-left .logo small {
+  font-weight: 400;
+  font-size: 10px;
+  color: #64748b;
+  letter-spacing: .06em;
+  margin-left: 8px;
+}
+.status-strip {
+  display: flex;
+  gap: 4px;
+}
+.status-strip span {
+  width: 20px;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255,255,255,.08);
+}
+.status-strip span.active { background: #5eead4; }
+
+.header-right { display: flex; align-items: center; gap: 8px; }
+.header-right .btn {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 5px 12px;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
+  transition: all .15s;
+}
+.header-right .btn-outline {
+  background: transparent;
+  border: 1px solid rgba(255,255,255,.1);
+  color: #94a3b8;
+}
+.header-right .btn-outline:hover { border-color: rgba(255,255,255,.2); color: #e8edf5; }
+.header-right .btn-primary {
+  background: linear-gradient(135deg, #5eead4, #2dd4bf);
+  color: #0b0d14;
+  font-weight: 700;
+}
+.header-right .btn-primary:hover { box-shadow: 0 2px 12px rgba(94,234,212,.3); }
+.header-right .badge {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  padding: 3px 10px;
+  border-radius: 4px;
+  background: rgba(94,234,212,.12);
+  color: #5eead4;
+  letter-spacing: .04em;
+}
+
+/* 3-column body */
+.body3 {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 230px 1fr 240px;
+  overflow: hidden;
+}
+
+/* Column 1: Snapshot */
+.col-snapshot {
+  border-right: 1px solid rgba(255,255,255,.04);
+  padding: 16px;
+  overflow-y: auto;
+}
+.col-snapshot .sec-title {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .1em;
+  color: #64748b;
+  margin-bottom: 10px;
+}
+.stat-card {
+  background: rgba(255,255,255,.025);
+  border: 1px solid rgba(255,255,255,.05);
+  border-radius: 10px;
+  padding: 12px;
+  margin-bottom: 10px;
+}
+.stat-card .row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+.stat-card .row .label { color: #64748b; }
+.stat-card .row .value { color: #e8edf5; font-weight: 600; }
+.stat-card .mana-bar {
+  height: 4px;
+  background: rgba(255,255,255,.06);
+  border-radius: 2px;
+  margin-top: 6px;
+  overflow: hidden;
+}
+.stat-card .mana-bar .fill {
+  height: 100%;
+  width: 71%;
+  background: linear-gradient(90deg, #5eead4, #2dd4bf);
+  border-radius: 2px;
+}
+.card-list-compact {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.card-chip-sm {
+  font-size: 11px;
+  padding: 5px 8px;
+  background: rgba(255,255,255,.03);
+  border-radius: 5px;
+  display: flex;
+  justify-content: space-between;
+  color: #94a3b8;
+}
+.card-chip-sm .name { color: #e8edf5; }
+.card-chip-sm .meta { color: #5eead4; font-weight: 500; }
+
+/* Column 2: Candidates */
+.col-main {
+  padding: 16px;
+  overflow-y: auto;
+}
+.col-main .sec-title {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .1em;
+  color: #64748b;
+  margin-bottom: 10px;
+  display: flex;
+  justify-content: space-between;
+}
+.cand-card {
+  padding: 14px;
+  background: rgba(255,255,255,.02);
+  border: 1px solid rgba(255,255,255,.05);
+  border-radius: 10px;
+  margin-bottom: 10px;
+  transition: all .2s;
+}
+.cand-card:hover { border-color: rgba(94,234,212,.2); background: rgba(255,255,255,.035); }
+.cand-card .head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.cand-card .head .title { font-size: 13px; font-weight: 600; color: #e8edf5; }
+.cand-card .head .conf {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+.conf.high { background: rgba(94,234,212,.12); color: #5eead4; }
+.conf.med { background: rgba(251,191,36,.12); color: #fbbf24; }
+.cand-card .actions {
+  font-size: 12px;
+  color: #94a3b8;
+  line-height: 1.8;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+}
+.cand-card .desc {
+  font-size: 11px;
+  color: #64748b;
+  margin-top: 6px;
+}
+
+/* Column 3: Settings + History */
+.col-side {
+  border-left: 1px solid rgba(255,255,255,.04);
+  padding: 16px;
+  overflow-y: auto;
+}
+.col-side .sec-title {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .1em;
+  color: #64748b;
+  margin-bottom: 10px;
+}
+.settings-group {
+  background: rgba(255,255,255,.02);
+  border: 1px solid rgba(255,255,255,.04);
+  border-radius: 10px;
+  padding: 12px;
+  margin-bottom: 12px;
+}
+.settings-group .field {
+  margin-bottom: 8px;
+}
+.settings-group .field label {
+  font-size: 10px;
+  color: #64748b;
+  display: block;
+  margin-bottom: 3px;
+  font-weight: 500;
+}
+.settings-group .field input, .settings-group .field select {
+  width: 100%;
+  font-size: 11px;
+  padding: 5px 8px;
+  border-radius: 5px;
+  border: 1px solid rgba(255,255,255,.08);
+  background: rgba(0,0,0,.3);
+  color: #e8edf5;
+  outline: none;
+}
+.settings-group .field input:focus { border-color: rgba(94,234,212,.3); }
+.toggle-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 11px;
+  color: #94a3b8;
+  padding: 4px 0;
+}
+.toggle {
+  width: 28px; height: 16px;
+  background: rgba(255,255,255,.1);
+  border-radius: 99px;
+  position: relative;
+  cursor: pointer;
+  transition: all .2s;
+}
+.toggle.on { background: rgba(94,234,212,.4); }
+.toggle::after {
+  content: '';
+  position: absolute;
+  width: 12px; height: 12px;
+  background: #fff;
+  border-radius: 50%;
+  top: 2px; left: 2px;
+  transition: all .2s;
+}
+.toggle.on::after { left: 14px; }
+
+.hist-item {
+  padding: 8px 10px;
+  border-radius: 6px;
+  font-size: 11px;
+  color: #94a3b8;
+  cursor: pointer;
+  transition: all .15s;
+}
+.hist-item:hover { background: rgba(255,255,255,.03); color: #e8edf5; }
+.hist-item .time { font-size: 10px; color: #64748b; }
+
+/* BOTTOM HUD OVERLAY */
+.hud-overlay {
+  margin-top: 16px;
+  width: 1000px;
+  background: rgba(10,12,20,.92);
+  border: 1px solid rgba(94,234,212,.2);
+  border-radius: 12px;
+  padding: 8px 16px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  backdrop-filter: blur(12px);
+  box-shadow: 0 8px 32px rgba(0,0,0,.4);
+}
+.hud-overlay .hud-state {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+.hud-overlay .hud-state .item {
+  font-size: 11px;
+  color: #64748b;
+}
+.hud-overlay .hud-state .item strong { color: #e8edf5; font-weight: 600; }
+.hud-divider { width: 1px; height: 24px; background: rgba(255,255,255,.06); flex-shrink: 0; }
+.hud-overlay .hud-suggestion {
+  flex: 1;
+  display: flex;
+  gap: 12px;
+  overflow: hidden;
+}
+.hud-overlay .hud-suggestion .s {
+  font-size: 11px;
+  color: #94a3b8;
+  white-space: nowrap;
+}
+.hud-overlay .hud-suggestion .s .rank { color: #5eead4; font-weight: 600; }
+.hud-overlay .hud-suggestion .s .conf { color: #fbbf24; }
+.hud-overlay .hud-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.hud-overlay .hud-actions button {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 12px;
+  border-radius: 5px;
+  border: none;
+  cursor: pointer;
+}
+.hud-overlay .hud-actions .primary { background: #5eead4; color: #0b0d14; }
+.hud-overlay .hud-actions .secondary { background: rgba(255,255,255,.06); color: #94a3b8; }
+</style>
+</head>
+<body>
+
+<div style="display:flex;flex-direction:column;align-items:center;gap:16px;">
+
+<!-- DASHBOARD -->
+<div class="dashboard">
+  <div class="header">
+    <div class="header-left">
+      <div class="logo">HA<span style="color:#64748b;font-weight:400;">ssistant</span> <small>炉石对局 Agent 助手</small></div>
+      <div class="status-strip">
+        <span class="active"></span><span class="active"></span><span class="active"></span><span class="active"></span>
+      </div>
+    </div>
+    <div class="header-right">
+      <button class="btn btn-outline">📖 引导</button>
+      <span class="badge">● 待命</span>
+    </div>
+  </div>
+
+  <div class="body3">
+    <!-- Col 1: Snapshot -->
+    <div class="col-snapshot">
+      <div class="sec-title">局面数据</div>
+      <div class="stat-card">
+        <div class="row"><span class="label">回合</span><span class="value">6</span></div>
+        <div class="row"><span class="label">法力</span><span class="value">5 / 7</span></div>
+        <div class="mana-bar"><div class="fill"></div></div>
+      </div>
+      <div class="sec-title" style="margin-top:12px;">手牌 · 5</div>
+      <div class="card-list-compact">
+        <div class="card-chip-sm"><span class="name">🔥 火球术</span><span class="meta">4费</span></div>
+        <div class="card-chip-sm"><span class="name">❄️ 寒冰箭</span><span class="meta">2费</span></div>
+        <div class="card-chip-sm"><span class="name">💧 水元素</span><span class="meta">6费</span></div>
+        <div class="card-chip-sm"><span class="name">📖 奥术智慧</span><span class="meta">3费</span></div>
+        <div class="card-chip-sm"><span class="name">🪙 幸运币</span><span class="meta">0费</span></div>
+      </div>
+      <div class="sec-title" style="margin-top:12px;">场面 · 3 / 2</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;">
+        <div><div style="font-size:10px;color:#64748b;margin-bottom:4px;">己方</div>
+          <div class="card-chip-sm"><span class="name">水元素 4/4</span></div>
+          <div class="card-chip-sm"><span class="name">民兵 4/3</span></div>
+          <div class="card-chip-sm"><span class="name">护甲师 1/3</span></div>
+        </div>
+        <div><div style="font-size:10px;color:#64748b;margin-bottom:4px;">对手</div>
+          <div class="card-chip-sm"><span class="name">恶魔卫士 3/3</span></div>
+          <div class="card-chip-sm"><span class="name">烈焰小鬼 3/2</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Col 2: Candidates -->
+    <div class="col-main">
+      <div class="sec-title"><span>候选路线</span><span style="font-weight:400;color:#64748b;">Agent 分析完毕 · 4.2s</span></div>
+
+      <div class="cand-card">
+        <div class="head">
+          <span class="title">抢血压制</span>
+          <span class="conf high">80%</span>
+        </div>
+        <div class="actions">
+          <span style="color:#64748b;">01</span> 水元素 → 敌方英雄<br>
+          <span style="color:#64748b;">02</span> 寒冰箭 → 敌方英雄<br>
+          <span style="color:#64748b;">03</span> 结束回合
+        </div>
+        <div class="desc">利用场面优势打脸，下回合火球术斩杀线</div>
+      </div>
+
+      <div class="cand-card">
+        <div class="head">
+          <span class="title">控场解场</span>
+          <span class="conf med">65%</span>
+        </div>
+        <div class="actions">
+          <span style="color:#64748b;">01</span> 寒冰箭 → 恶魔卫士<br>
+          <span style="color:#64748b;">02</span> 水元素 → 恶魔卫士<br>
+          <span style="color:#64748b;">03</span> 结束回合
+        </div>
+        <div class="desc">解掉嘲讽，保护己方场面</div>
+      </div>
+
+      <div class="cand-card" style="opacity:.7;">
+        <div class="head">
+          <span class="title">过牌找伤害</span>
+          <span class="conf med">45%</span>
+        </div>
+        <div class="actions">
+          <span style="color:#64748b;">01</span> 奥术智慧 → 抽牌<br>
+          <span style="color:#64748b;">02</span> 结束回合
+        </div>
+        <div class="desc">过牌寻找更多伤害，但节奏偏慢</div>
+      </div>
+    </div>
+
+    <!-- Col 3: Settings + History -->
+    <div class="col-side">
+      <div class="sec-title">Agent 配置</div>
+      <div class="settings-group">
+        <div class="field">
+          <label>Agent</label>
+          <select><option>默认 Agent</option><option>DeepSeek V3</option></select>
+        </div>
+        <div class="field">
+          <label>模型</label>
+          <input value="deepseek-chat" placeholder="输入模型名称">
+        </div>
+        <div class="field">
+          <label>接口地址</label>
+          <input value="http://127.0.0.1:8001">
+        </div>
+        <div class="field" style="margin-bottom:0;">
+          <label>API Key</label>
+          <input type="password" value="sk-••••••••" placeholder="已保存">
+        </div>
+      </div>
+      <div class="settings-group">
+        <div class="toggle-row"><span>自动分析</span><div class="toggle on"></div></div>
+        <div class="toggle-row"><span>实时建议</span><div class="toggle"></div></div>
+        <div class="toggle-row"><span>多 Agent 对比</span><div class="toggle"></div></div>
+        <div style="margin-top:8px;display:flex;gap:6px;">
+          <button style="flex:1;font-size:11px;font-weight:600;padding:5px;background:rgba(94,234,212,.12);color:#5eead4;border:1px solid rgba(94,234,212,.15);border-radius:5px;cursor:pointer;">保存</button>
+          <button style="flex:1;font-size:11px;font-weight:600;padding:5px;background:rgba(255,255,255,.04);color:#94a3b8;border:1px solid rgba(255,255,255,.08);border-radius:5px;cursor:pointer;">测试</button>
+        </div>
+      </div>
+      <div class="sec-title">历史</div>
+      <div class="hist-item"><div>🔥 赢一手水元素</div><div class="time">16:22 · 6月6日</div></div>
+      <div class="hist-item"><div>❄️ 冰系控场</div><div class="time">16:18 · 6月6日</div></div>
+      <div class="hist-item"><div>⚔️ 中期铺场</div><div class="time">15:50 · 6月6日</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- HUD OVERLAY -->
+<div class="hud-overlay">
+  <div class="hud-state">
+    <span class="item"><strong>⚡5</strong>/7</span>
+    <span class="item"><strong>🖐5</strong></span>
+    <span class="item"><strong>🛡3</strong>/2</span>
+  </div>
+  <div class="hud-divider"></div>
+  <div class="hud-suggestion">
+    <span class="s"><span class="rank">#1</span> 水元素→英雄  <span class="conf">80%</span></span>
+    <span class="s"><span class="rank">#2</span> 寒冰箭→恶魔卫士  <span class="conf">65%</span></span>
+    <span class="s"><span class="rank">#3</span> 奥术智慧过牌  <span class="conf">45%</span></span>
+  </div>
+  <div class="hud-divider"></div>
+  <div class="hud-actions">
+    <span style="font-size:10px;color:#64748b;">⏱4.2s</span>
+    <button class="primary">分析</button>
+    <button class="secondary">停止</button>
+  </div>
+</div>
+
+</div>
+
+</body>
+</html>

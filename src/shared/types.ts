@@ -112,6 +112,8 @@ export interface CandidateLine {
   rationale: string;
   risks: string[];
   confidence: number;
+  winRateBefore?: number;
+  winRateAfter?: number;
 }
 
 export interface AnalysisResult {
@@ -136,6 +138,16 @@ export interface AppSettings {
   liveRecommendationsEnabled: boolean;
   liveRecommendationsRiskAcceptedAt?: string;
   autoAnalyze: boolean;
+  guideDismissed?: boolean;
+  language: "zhCN" | "enUS";
+  multiAgentCompareEnabled: boolean;
+  winRateEstimationEnabled: boolean;
+  hotkeys: HotkeyConfig;
+}
+
+export interface HotkeyConfig {
+  analyze: string;
+  toggleOverlay: string;
 }
 
 export interface AgentProfile {

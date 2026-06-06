@@ -38,6 +38,11 @@ export class VisualValidator {
       return { ok: false, errors, warnings, resolution, matchedEntityIds };
     }
 
+    if (!catalog.hasFeatures()) {
+      warnings.push("没有可用的视觉特征，本次仅使用 Power.log 快照分析。");
+      return { ok: true, errors, warnings, resolution, matchedEntityIds };
+    }
+
     const slots = buildSlots(snapshot, size.width, size.height);
     const mismatchedEntityIds: number[] = [];
     for (const slot of slots) {

@@ -10,9 +10,6 @@ const catalog = JSON.parse(await readFile(resolve(path), "utf8"));
 const errors = [];
 const warnings = [];
 
-if (catalog.locale !== "zhCN") {
-  errors.push("locale 必须为 zhCN。");
-}
 if (!catalog.version || catalog.version === "unconfigured") {
   errors.push("version 尚未配置。");
 }
@@ -35,9 +32,6 @@ for (const [index, entry] of (catalog.entries ?? []).entries()) {
   ids.add(entry.cardId);
   if (!Number.isFinite(entry.cost)) {
     errors.push(`${label} 的 cost 无效。`);
-  }
-  if (entry.standard !== true) {
-    errors.push(`${label} 不是标准模式卡牌。`);
   }
   if (!entry.imageHash) {
     warnings.push(`${entry.cardId} 缺少视觉特征。`);

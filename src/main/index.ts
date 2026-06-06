@@ -75,11 +75,26 @@ const IPC = {
   analyze: "app:analyze",
   testAgentConnection: "app:test-agent-connection",
   toggleOverlay: "app:toggle-overlay",
+  showMainWindow: "app:show-main-window",
   listHistory: "app:list-history",
   statusChanged: "app:status-changed",
   getLastAgentRequest: "app:get-last-agent-request",
   stopAnalysis: "app:stop-analysis",
+  windowMinimize: "app:window-minimize",
+  windowMaximize: "app:window-maximize",
+  windowClose: "app:window-close",
 } as const;
+
+const gotTheLock = app.requestSingleInstanceLock();
+if (!gotTheLock) {
+  app.quit();
+}
+app.on("second-instance", () => {
+  if (mainWindow) {
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.focus();
+  }
+});
 
 app.whenReady().then(async () => {
   const userData = app.getPath("userData");
@@ -90,6 +105,7 @@ app.whenReady().then(async () => {
   diagnosticLog = new DiagnosticLog(join(userData, "diagnostics.jsonl"));
   settings = await settingsStore.load();
   catalog = await CardCatalog.load(resolveCatalogPath());
+  catalog.setLanguage(settings.language);
   historyDatabase.setCardCatalogVersion(catalog.version);
   parser = new PowerLogParser();
   writeDiagnostic("app.ready", {
@@ -131,10 +147,11 @@ function createWindows(): void {
   const rendererFile = join(app.getAppPath(), "dist", "renderer", "index.html");
 
   mainWindow = new BrowserWindow({
-    width: 980,
-    height: 760,
+    width: 960,
+    height: 700,
     minWidth: 820,
     minHeight: 640,
+    frame: false,
     title: "炉石对局 Agent 助手",
     webPreferences: {
       preload,
@@ -146,9 +163,9 @@ function createWindows(): void {
 
   overlayWindow = new BrowserWindow({
     width: 420,
-    height: 760,
-    x: 24,
-    y: 96,
+    height: 540,
+    x: mainWindow.getPosition()[0] - 420,
+    y: mainWindow.getPosition()[1] + 30,
     frame: false,
     transparent: true,
     alwaysOnTop: true,
@@ -180,8 +197,17 @@ function createWindows(): void {
 }
 
 function registerShortcuts(): void {
-  globalShortcut.register("CommandOrControl+Shift+A", () => void analyzeCurrentState("manual"));
-  globalShortcut.register("CommandOrControl+Shift+O", () => toggleOverlay());
+  globalShortcut.unregisterAll();
+  try {
+    globalShortcut.register(settings.hotkeys.analyze, () => void analyzeCurrentState("manual"));
+  } catch {
+    globalShortcut.register("CommandOrControl+Shift+A", () => void analyzeCurrentState("manual"));
+  }
+  try {
+    globalShortcut.register(settings.hotkeys.toggleOverlay, () => toggleOverlay());
+  } catch {
+    globalShortcut.register("CommandOrControl+Shift+O", () => toggleOverlay());
+  }
 }
 
 function registerIpc(): void {
@@ -203,6 +229,22 @@ function registerIpc(): void {
   ipcMain.handle(IPC.analyze, () => analyzeCurrentState("manual"));
   ipcMain.handle(IPC.testAgentConnection, () => testAgentConnection());
   ipcMain.handle(IPC.toggleOverlay, () => toggleOverlay());
+  ipcMain.handle(IPC.showMainWindow, () => {
+    if (mainWindow) {
+      if (mainWindow.isVisible()) {
+        mainWindow.hide();
+      } else {
+        mainWindow.show();
+        mainWindow.focus();
+      }
+    }
+  });
+  ipcMain.handle(IPC.windowMinimize, () => mainWindow?.minimize());
+  ipcMain.handle(IPC.windowMaximize, () => {
+    if (mainWindow?.isMaximized()) mainWindow.unmaximize();
+    else mainWindow?.maximize();
+  });
+  ipcMain.handle(IPC.windowClose, () => mainWindow?.close());
   ipcMain.handle(IPC.setApiKey, async (_event, apiKey: string, agentId?: string) => {
     await credentialStore.setApiKey(apiKey, agentId ?? activeAgent().id);
     return Boolean(apiKey.trim());
@@ -210,9 +252,11 @@ function registerIpc(): void {
   ipcMain.handle(
     IPC.saveSettings,
     async (_event, nextSettings: AppSettings) => {
+      catalog.setLanguage(nextSettings.language);
       settings = await settingsStore.save(nextSettings);
       await startWatcher();
       setOverlayVisible(settings.overlayVisible);
+      registerShortcuts();
       broadcastStatus();
       return getStatus();
     },
@@ -319,6 +363,7 @@ async function testAgentConnection(): Promise<AppStatus> {
         model: agent.model,
         transport: agent.transport,
         timeoutMs: agent.timeoutMs,
+        winRateEstimationEnabled: settings.winRateEstimationEnabled,
       },
       apiKey,
       catalog,
@@ -402,36 +447,13 @@ async function analyzeCurrentState(source: "manual" | "auto" = "manual"): Promis
     const snapshot = await prepareSnapshotForAnalysis(source, cancelSignal);
 
     cancelSignal.throwIfAborted();
-    let agent = activeAgent();
-    let apiKey = await credentialStore.getApiKey(agent.id);
-    if (!apiKey) {
-      const fallback = await chooseFallbackAgent(agent, "尚未配置 Agent API Key。");
-      if (!fallback) {
-        throw new Error("尚未配置 Agent API Key。");
-      }
-      agent = fallback;
-      apiKey = fallback.apiKey;
-    }
-    if (!agent.model) {
-      throw new Error("尚未配置 Agent 模型名称。");
-    }
 
-    statusMessage = `正在请求 ${agent.name} 分析…`;
-    broadcastStatus();
-    const remainingMs = agent.timeoutMs - (Date.now() - analysisStartedAt);
-    if (remainingMs < 1_000) {
-      throw new Error(`分析准备阶段已超过 ${agent.timeoutMs}ms 总预算。`);
-    }
-    const requestedRevision = snapshot.revision;
-    const result = await requestAnalysisWithFallback({
-      agent,
-      apiKey,
-      snapshot,
-      timeoutMs: remainingMs,
-      signal: cancelSignal,
-    });
+    const result = settings.multiAgentCompareEnabled
+      ? await runMultiAgentComparison(snapshot, analysisStartedAt, cancelSignal)
+      : await runSingleAgentAnalysis(snapshot, analysisStartedAt, cancelSignal);
+
     const latestSnapshot = currentSnapshot;
-    if (!latestSnapshot || latestSnapshot.revision !== requestedRevision) {
+    if (!latestSnapshot || latestSnapshot.revision !== result.snapshotRevision) {
       currentAnalysis = {
         ...result,
         stale: true,
@@ -607,6 +629,7 @@ async function requestAnalysisFromAgent(
       model: agent.model,
       transport: agent.transport,
       timeoutMs,
+      winRateEstimationEnabled: settings.winRateEstimationEnabled,
     },
     apiKey,
     catalog,
@@ -620,6 +643,101 @@ async function requestAnalysisFromAgent(
     },
     signal,
   );
+}
+
+async function runSingleAgentAnalysis(
+  snapshot: GameStateSnapshot,
+  analysisStartedAt: number,
+  cancelSignal: AbortSignal,
+): Promise<AnalysisResult> {
+  let agent = activeAgent();
+  let apiKey = await credentialStore.getApiKey(agent.id);
+  if (!apiKey) {
+    const fallback = await chooseFallbackAgent(agent, "尚未配置 Agent API Key。");
+    if (!fallback) throw new Error("尚未配置 Agent API Key。");
+    agent = fallback;
+    apiKey = fallback.apiKey;
+  }
+  if (!agent.model) throw new Error("尚未配置 Agent 模型名称。");
+  statusMessage = `正在请求 ${agent.name} 分析…`;
+  broadcastStatus();
+  const elapsed = Date.now() - analysisStartedAt;
+  const remainingMs = agent.timeoutMs - elapsed;
+  if (remainingMs < 1_000) throw new Error(`分析准备阶段已超过 ${agent.timeoutMs}ms 总预算。`);
+  return requestAnalysisWithFallback({ agent, apiKey, snapshot, timeoutMs: remainingMs, signal: cancelSignal });
+}
+
+async function runMultiAgentComparison(
+  snapshot: GameStateSnapshot,
+  analysisStartedAt: number,
+  cancelSignal: AbortSignal,
+): Promise<AnalysisResult> {
+  const eligible: Array<AgentProfile & { apiKey: string }> = [];
+  for (const agent of settings.agents) {
+    if (!agent.model) continue;
+    const apiKey = await credentialStore.getApiKey(agent.id);
+    if (apiKey) eligible.push({ ...agent, apiKey });
+  }
+  if (eligible.length === 0) {
+    return runSingleAgentAnalysis(snapshot, analysisStartedAt, cancelSignal);
+  }
+  statusMessage = `正在并行请求 ${eligible.length} 个 Agent 分析…`;
+  broadcastStatus();
+
+  const elapsed = Date.now() - analysisStartedAt;
+  const perAgentMs = Math.max(4_000, settings.agents[0]?.timeoutMs ?? 8_000) - elapsed;
+
+  const results = await Promise.allSettled(
+    eligible.map((agent) =>
+      requestAnalysisFromAgent(agent, agent.apiKey, snapshot, Math.max(2_000, perAgentMs), cancelSignal),
+    ),
+  );
+
+  const successes: Array<{ agentName: string; result: AnalysisResult }> = [];
+  const errors: string[] = [];
+
+  for (const [index, settled] of results.entries()) {
+    const agent = eligible[index]!;
+    if (settled.status === "fulfilled") {
+      successes.push({ agentName: agent.name, result: settled.value });
+    } else {
+      errors.push(`${agent.name}: ${settled.reason instanceof Error ? settled.reason.message : "失败"}`);
+    }
+  }
+
+  if (successes.length === 0) {
+    throw new Error(`所有 Agent 分析均失败：${errors.join("；")}`);
+  }
+
+  const primary = successes[0]!;
+  const mergedCandidates = primary.result.candidates.map((c) => ({
+    ...c,
+    rationale: `[${primary.agentName}] ${c.rationale}`,
+  }));
+  const extraCandidates = successes.slice(1).flatMap((s) =>
+    s.result.candidates.map((c) => ({
+      ...c,
+      rank: mergedCandidates.length + c.rank,
+      rationale: `[${s.agentName}] ${c.rationale}`,
+    })),
+  );
+  mergedCandidates.push(...extraCandidates);
+  mergedCandidates.sort((a, b) => b.confidence - a.confidence);
+  mergedCandidates.forEach((c, i) => { c.rank = i + 1; });
+
+  const warnings: string[] = [...primary.result.warnings];
+  for (const s of successes.slice(1)) {
+    warnings.push(...s.result.warnings);
+  }
+  warnings.push(...errors.map((e) => `Agent 对比：${e}`));
+
+  return {
+    snapshotRevision: primary.result.snapshotRevision,
+    summary: `多 Agent 对比 · ${successes.length} 个成功` + (errors.length > 0 ? ` · ${errors.length} 个失败` : ""),
+    candidates: mergedCandidates.slice(0, settings.maxCandidates * successes.length),
+    warnings,
+    createdAt: new Date().toISOString(),
+  };
 }
 
 async function chooseFallbackAgent(

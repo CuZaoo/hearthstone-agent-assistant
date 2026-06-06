@@ -10,6 +10,7 @@ const children = new Set();
 const expectedElectronExits = new Set();
 let electronProcess;
 let restartTimer;
+let restarting = false;
 
 const npx = process.platform === "win32" ? "npx.cmd" : "npx";
 const vite = start(npx, ["vite"], "vite");
@@ -61,11 +62,15 @@ function start(command, args, name, env = {}) {
   return child;
 }
 
-function startElectron() {
+async function startElectron() {
+  if (restarting) return;
+  restarting = true;
   if (electronProcess) {
     expectedElectronExits.add(electronProcess);
     killTree(electronProcess);
     children.delete(electronProcess);
+    electronProcess = undefined;
+    await delay(500);
   }
   electronProcess = start(
     npx,
@@ -73,6 +78,7 @@ function startElectron() {
     "electron",
     { VITE_DEV_SERVER_URL: viteUrl },
   );
+  restarting = false;
 }
 
 async function waitFor(predicate, label) {

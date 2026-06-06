@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>方案C - 选项卡 + 浮动控制</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;700&display=swap" rel="stylesheet">
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+::-webkit-scrollbar { width: 0; }
+
+body {
+  font-family: 'Inter', 'Microsoft YaHei UI', sans-serif;
+  background: #0e0f15;
+  color: #e2e8f0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  padding: 24px;
+  background-image:
+    radial-gradient(ellipse at 50% 0, rgba(168,85,247,.04), transparent 50%),
+    radial-gradient(ellipse at 50% 100%, rgba(59,130,246,.04), transparent 50%);
+}
+
+/* ===== DASHBOARD ===== */
+.dashboard {
+  width: 960px;
+  height: 700px;
+  background: rgba(12,14,22,.96);
+  border: 1px solid rgba(255,255,255,.04);
+  border-radius: 24px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  position: relative;
+  box-shadow: 0 32px 96px rgba(0,0,0,.6);
+}
+
+/* Thin top bar */
+.thin-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 24px;
+  border-bottom: 1px solid rgba(255,255,255,.04);
+  background: rgba(0,0,0,.15);
+}
+.thin-bar .brand {
+  font-family: 'Outfit', sans-serif;
+  font-weight: 700;
+  font-size: 14px;
+  color: #e2e8f0;
+  letter-spacing: -.02em;
+}
+.thin-bar .brand span { color: #a78bfa; }
+.thin-bar .center { display: flex; gap: 4px; }
+.thin-bar .center .status-pip {
+  width: 6px; height: 6px; border-radius: 50%;
+}
+.thin-bar .center .status-pip.green { background: #34d399; box-shadow: 0 0 6px rgba(52,211,153,.3); }
+.thin-bar .right { display: flex; align-items: center; gap: 10px; }
+.thin-bar .right .guide-btn {
+  font-size: 11px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(167,139,250,.15);
+  background: rgba(167,139,250,.08);
+  color: #a78bfa;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all .2s;
+}
+.thin-bar .right .guide-btn:hover { background: rgba(167,139,250,.15); }
+.thin-bar .right .pill {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: rgba(52,211,153,.1);
+  color: #34d399;
+}
+
+/* Tabs */
+.tabs {
+  display: flex;
+  padding: 0 24px;
+  gap: 0;
+  border-bottom: 1px solid rgba(255,255,255,.03);
+}
+.tab {
+  padding: 12px 20px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #64748b;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: all .2s;
+  letter-spacing: .01em;
+}
+.tab:hover { color: #94a3b8; }
+.tab.active {
+  color: #a78bfa;
+  border-bottom-color: #a78bfa;
+}
+.tab .count {
+  margin-left: 6px;
+  font-size: 10px;
+  font-weight: 500;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(255,255,255,.05);
+  color: #64748b;
+}
+
+/* Content Area */
+.content-area {
+  flex: 1;
+  padding: 20px 24px 80px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.cards-row {
+  display: flex;
+  gap: 16px;
+}
+.card-group {
+  flex: 1;
+  background: rgba(255,255,255,.015);
+  border: 1px solid rgba(255,255,255,.04);
+  border-radius: 14px;
+  padding: 14px;
+}
+.card-group .group-title {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  color: #64748b;
+  margin-bottom: 10px;
+  display: flex;
+  justify-content: space-between;
+}
+.card-group .group-title .n { color: #a78bfa; }
+.cc {
+  padding: 6px 8px;
+  font-size: 12px;
+  color: #e2e8f0;
+  border-bottom: 1px solid rgba(255,255,255,.03);
+  display: flex;
+  justify-content: space-between;
+}
+.cc:last-child { border-bottom: none; }
+.cc .cost { color: #60a5fa; font-weight: 500; }
+
+/* Candidate list */
+.c-list { display: flex; flex-direction: column; gap: 6px; }
+.c-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  background: rgba(255,255,255,.02);
+  border: 1px solid rgba(255,255,255,.04);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all .15s;
+}
+.c-item:hover { border-color: rgba(167,139,250,.15); background: rgba(167,139,250,.04); }
+.c-item .rank-num {
+  font-family: 'Outfit', sans-serif;
+  font-weight: 700;
+  font-size: 16px;
+  color: #a78bfa;
+  width: 28px;
+  text-align: center;
+  opacity: .6;
+}
+.c-item .c-body { flex: 1; }
+.c-item .c-body .c-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 2px;
+}
+.c-item .c-body .c-title strong { font-size: 13px; color: #e2e8f0; }
+.c-item .c-body .c-title .conf {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+.c-item .c-body .c-actions {
+  font-size: 11px;
+  color: #64748b;
+}
+.c-item .c-expand { color: #64748b; font-size: 12px; }
+.c-item .conf.high { background: rgba(52,211,153,.12); color: #34d399; }
+.c-item .conf.med { background: rgba(251,191,36,.12); color: #fbbf24; }
+
+/* Floating action button */
+.floating-actions {
+  position: absolute;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(18,20,30,.94);
+  border: 1px solid rgba(167,139,250,.15);
+  border-radius: 16px;
+  padding: 8px 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  backdrop-filter: blur(12px);
+  box-shadow: 0 8px 40px rgba(0,0,0,.5);
+}
+.floating-actions .btn-primary {
+  background: linear-gradient(135deg, #a78bfa, #8b5cf6);
+  border: none;
+  color: #fff;
+  font-weight: 700;
+  font-size: 13px;
+  padding: 8px 20px;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all .2s;
+}
+.floating-actions .btn-primary:hover { box-shadow: 0 4px 20px rgba(139,92,246,.35); transform: translateY(-1px); }
+.floating-actions .btn-ghost {
+  background: transparent;
+  border: none;
+  color: #64748b;
+  font-size: 12px;
+  padding: 8px 12px;
+  cursor: pointer;
+  transition: all .2s;
+}
+.floating-actions .btn-ghost:hover { color: #94a3b8; }
+.floating-actions .sep { width: 1px; height: 20px; background: rgba(255,255,255,.06); }
+.floating-actions .stat { font-size: 11px; color: #64748b; }
+
+/* ===== OVERLAY: Floating Ball ===== */
+.overlay-container {
+  margin-left: 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+}
+
+.floating-ball {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, rgba(167,139,250,.9), rgba(139,92,246,.9));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  cursor: pointer;
+  box-shadow: 0 4px 24px rgba(139,92,246,.3);
+  transition: all .2s;
+  position: relative;
+}
+.floating-ball:hover { transform: scale(1.05); box-shadow: 0 6px 32px rgba(139,92,246,.4); }
+.floating-ball .badge-num {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  width: 20px;
+  height: 20px;
+  background: #f43f5e;
+  border-radius: 50%;
+  font-size: 10px;
+  font-weight: 700;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.overlay-popup {
+  width: 380px;
+  background: rgba(12,14,22,.97);
+  border: 1px solid rgba(167,139,250,.25);
+  border-radius: 20px;
+  overflow: hidden;
+  backdrop-filter: blur(16px);
+  box-shadow: 0 24px 80px rgba(0,0,0,.6);
+}
+.overlay-popup .popup-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  border-bottom: 1px solid rgba(255,255,255,.05);
+}
+.overlay-popup .popup-header .title {
+  font-family: 'Outfit', sans-serif;
+  font-weight: 700;
+  font-size: 14px;
+  color: #a78bfa;
+}
+.overlay-popup .popup-header .actions { display: flex; gap: 6px; }
+.overlay-popup .popup-header .actions button {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 12px;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
+  transition: all .15s;
+}
+.overlay-popup .popup-header .actions .btn-primary-sm { background: #a78bfa; color: #fff; }
+.overlay-popup .popup-header .actions .btn-ghost-sm { background: transparent; color: #64748b; border: 1px solid rgba(255,255,255,.08); }
+.overlay-popup .popup-body { padding: 14px 18px; }
+.overlay-popup .popup-body .summary {
+  font-size: 13px;
+  color: #c4b5fd;
+  margin-bottom: 12px;
+  line-height: 1.5;
+}
+.overlay-popup .popup-item {
+  padding: 10px 12px;
+  background: rgba(255,255,255,.02);
+  border: 1px solid rgba(255,255,255,.04);
+  border-radius: 10px;
+  margin-bottom: 6px;
+}
+.overlay-popup .popup-item .pi-head {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+.overlay-popup .popup-item .pi-head .name { color: #e2e8f0; font-weight: 600; }
+.overlay-popup .popup-item .pi-actions {
+  font-size: 11px;
+  color: #64748b;
+  line-height: 1.6;
+}
+</style>
+</head>
+<body>
+
+<div style="display:flex;align-items:stretch;gap:20px;">
+
+<!-- MAIN DASHBOARD -->
+<div class="dashboard">
+  <div class="thin-bar">
+    <div class="brand"><span>✦</span> Arcane <span style="font-weight:400;color:#64748b;">Agent</span></div>
+    <div class="center">
+      <span class="status-pip green"></span>
+      <span class="status-pip green"></span>
+      <span class="status-pip green"></span>
+      <span class="status-pip green"></span>
+    </div>
+    <div class="right">
+      <button class="guide-btn">📖 引导</button>
+      <span class="pill">● 待命</span>
+    </div>
+  </div>
+
+  <div class="tabs">
+    <div class="tab active">🎴 局面</div>
+    <div class="tab">🎯 建议 <span class="count">3</span></div>
+    <div class="tab">⚙️ 设置</div>
+    <div class="tab">📋 历史 <span class="count">12</span></div>
+  </div>
+
+  <div class="content-area">
+    <div class="cards-row">
+      <div class="card-group">
+        <div class="group-title">己方手牌 <span class="n">5</span></div>
+        <div class="cc"><span>🔥 火球术</span><span class="cost">4费</span></div>
+        <div class="cc"><span>❄️ 寒冰箭</span><span class="cost">2费</span></div>
+        <div class="cc"><span>💧 水元素</span><span class="cost">6费</span></div>
+        <div class="cc"><span>📖 奥术智慧</span><span class="cost">3费</span></div>
+        <div class="cc"><span>🪙 幸运币</span><span class="cost">0费</span></div>
+      </div>
+      <div class="card-group">
+        <div class="group-title">己方场面 <span class="n">3</span></div>
+        <div class="cc"><span>💧 水元素 4/4</span><span>#9</span></div>
+        <div class="cc"><span>⚔️ 民兵指挥官 4/3</span><span>#10</span></div>
+        <div class="cc"><span>🛡 护甲锻造师 1/3</span><span>#11</span></div>
+      </div>
+      <div class="card-group">
+        <div class="group-title">对手场面 <span class="n">2</span></div>
+        <div class="cc"><span>👹 恶魔卫士 3/3</span><span>嘲讽</span></div>
+        <div class="cc"><span>🔥 烈焰小鬼 3/2</span><span>#15</span></div>
+      </div>
+      <div class="card-group" style="flex:0 0 auto;min-width:80px;text-align:center;">
+        <div class="group-title" style="justify-content:center;">法力</div>
+        <div style="font-family:'Outfit',sans-serif;font-size:28px;font-weight:700;color:#a78bfa;">5</div>
+        <div style="font-size:12px;color:#64748b;">/ 7</div>
+      </div>
+    </div>
+
+    <div class="c-list">
+      <div class="c-item">
+        <div class="rank-num">01</div>
+        <div class="c-body">
+          <div class="c-title">
+            <strong>抢血压制</strong>
+            <span class="conf high">80%</span>
+          </div>
+          <div class="c-actions">水元素→英雄 · 寒冰箭→英雄 → 结束</div>
+        </div>
+        <div class="c-expand">▸</div>
+      </div>
+      <div class="c-item">
+        <div class="rank-num">02</div>
+        <div class="c-body">
+          <div class="c-title">
+            <strong>控场解场</strong>
+            <span class="conf med">65%</span>
+          </div>
+          <div class="c-actions">寒冰箭→恶魔卫士 · 水元素→恶魔卫士 → 结束</div>
+        </div>
+        <div class="c-expand">▸</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Floating action bar -->
+  <div class="floating-actions">
+    <span class="stat">⚡ 5/7</span>
+    <span class="stat">🖐 5</span>
+    <span class="stat">⏱ 4.2s</span>
+    <div class="sep"></div>
+    <button class="btn-primary">⚡ 分析</button>
+    <button class="btn-ghost">停止</button>
+    <div class="sep"></div>
+    <button class="btn-ghost">⚙️</button>
+  </div>
+</div>
+
+<!-- OVERLAY: Floating Ball + Popup -->
+<div class="overlay-container">
+  <div class="floating-ball">
+    🎯
+    <span class="badge-num">3</span>
+  </div>
+  <span style="font-size:10px;color:#64748b;">悬浮球 (点击展开)</span>
+
+  <div class="overlay-popup">
+    <div class="popup-header">
+      <div class="title">🎯 建议面板</div>
+      <div class="actions">
+        <button class="btn-primary-sm">分析</button>
+        <button class="btn-ghost-sm">×</button>
+      </div>
+    </div>
+    <div class="popup-body">
+      <div class="summary">场面优势，建议抢血压制，下回合火球术斩杀。</div>
+      <div class="popup-item">
+        <div class="pi-head">
+          <span class="name">路线 1 · 抢血压制</span>
+          <span style="color:#34d399;font-weight:600;">80%</span>
+        </div>
+        <div class="pi-actions">水元素→英雄 · 寒冰箭→英雄 → 结束</div>
+      </div>
+      <div class="popup-item">
+        <div class="pi-head">
+          <span class="name">路线 2 · 控场解场</span>
+          <span style="color:#fbbf24;font-weight:600;">65%</span>
+        </div>
+        <div class="pi-actions">寒冰箭→恶魔卫士 · 水元素→恶魔卫士 → 结束</div>
+      </div>
+      <div style="margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,255,255,.04);">
+        <div style="display:flex;justify-content:space-between;font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:.06em;">
+          <span>⚡ 5/7 · 🖐 5 · 🛡 3</span>
+          <span>历史 12</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</div>
+
+</body>
+</html>

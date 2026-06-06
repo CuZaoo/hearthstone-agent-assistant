@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>方案D - 上下分区 + 底栏状态</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,.05); border-radius: 999px; }
+
+body {
+  font-family: 'Space Grotesk', 'Microsoft YaHei UI', sans-serif;
+  background: #0a0a0f;
+  color: #e4e4ec;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  padding: 20px;
+  gap: 16px;
+  background-image:
+    radial-gradient(ellipse at 50% 0, rgba(249,115,22,.03), transparent 40%),
+    radial-gradient(ellipse at 50% 100%, rgba(251,146,60,.02), transparent 40%);
+}
+
+/* ===== DASHBOARD ===== */
+.dashboard {
+  width: 960px;
+  height: 700px;
+  background: #0d0d14;
+  border: 1px solid rgba(255,255,255,.04);
+  border-radius: 16px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 24px 80px rgba(0,0,0,.5);
+}
+
+/* Top bar */
+.dash-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 20px;
+  border-bottom: 1px solid rgba(255,255,255,.04);
+}
+.dash-topbar .brand {
+  font-weight: 700;
+  font-size: 13px;
+  letter-spacing: -.01em;
+  color: #fb923c;
+}
+.dash-topbar .brand span { color: #64748b; font-weight: 400; }
+.dash-topbar .mid {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.dash-topbar .mid .seg {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  padding: 4px 10px;
+  border-radius: 4px;
+  background: rgba(255,255,255,.03);
+  color: #64748b;
+  letter-spacing: .04em;
+  cursor: pointer;
+  transition: all .15s;
+}
+.dash-topbar .mid .seg:hover { color: #94a3b8; background: rgba(255,255,255,.06); }
+.dash-topbar .mid .seg.active { color: #fb923c; background: rgba(251,146,60,.08); border: 1px solid rgba(251,146,60,.15); }
+.dash-topbar .right { display: flex; align-items: center; gap: 8px; }
+.dash-topbar .right .btn-guide {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 4px;
+  border: 1px solid rgba(255,255,255,.08);
+  background: transparent;
+  color: #94a3b8;
+  cursor: pointer;
+  transition: all .15s;
+}
+.dash-topbar .right .btn-guide:hover { border-color: rgba(255,255,255,.15); color: #e4e4ec; }
+.dash-topbar .right .badge {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 4px;
+  background: rgba(34,197,94,.1);
+  color: #22c55e;
+}
+
+/* Two-panel body */
+.body-split {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Top panel: snapshot */
+.panel-top {
+  padding: 14px 20px;
+  border-bottom: 1px solid rgba(255,255,255,.03);
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+  flex-shrink: 0;
+}
+.panel-top .snap-mini {
+  flex: 1;
+  display: flex;
+  gap: 12px;
+}
+.panel-top .snap-mini .col {
+  flex: 1;
+  min-width: 0;
+}
+.panel-top .snap-mini .col .col-head {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: #64748b;
+  margin-bottom: 6px;
+}
+.panel-top .snap-mini .col .col-head .num {
+  color: #fb923c;
+  margin-left: 4px;
+}
+.panel-top .snap-mini .sg {
+  padding: 4px 6px;
+  font-size: 11px;
+  color: #c4c4d0;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  border-left: 2px solid rgba(251,146,60,.15);
+  padding-left: 8px;
+  margin-bottom: 2px;
+}
+.panel-top .snap-mini .sg .cst { color: #fb923c; font-weight: 600; }
+.panel-top .mana-block {
+  flex-shrink: 0;
+  text-align: center;
+  padding: 0 12px;
+}
+.panel-top .mana-block .num {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 28px;
+  font-weight: 700;
+  color: #fb923c;
+  line-height: 1;
+}
+.panel-top .mana-block .label {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: #64748b;
+}
+.panel-top .action-strip {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+  align-items: flex-start;
+  padding-top: 4px;
+}
+.panel-top .action-strip .btn-primary {
+  background: linear-gradient(135deg, #fb923c, #f97316);
+  border: none;
+  color: #0a0a0f;
+  font-weight: 700;
+  font-size: 12px;
+  padding: 8px 18px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all .15s;
+}
+.panel-top .action-strip .btn-primary:hover { box-shadow: 0 2px 16px rgba(251,146,60,.3); }
+.panel-top .action-strip .btn-ghost {
+  background: rgba(255,255,255,.04);
+  border: 1px solid rgba(255,255,255,.06);
+  color: #94a3b8;
+  font-size: 11px;
+  padding: 7px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+/* Bottom panel: candidates + details */
+.panel-bottom {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+}
+.panel-bottom .cand-list {
+  width: 55%;
+  padding: 14px 20px;
+  overflow-y: auto;
+  border-right: 1px solid rgba(255,255,255,.03);
+}
+.panel-bottom .detail-pane {
+  flex: 1;
+  padding: 14px 20px;
+  overflow-y: auto;
+}
+
+.panel-bottom .sec-title {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  color: #64748b;
+  margin-bottom: 10px;
+}
+
+.cand-entry {
+  padding: 10px 12px;
+  margin-bottom: 6px;
+  border: 1px solid rgba(255,255,255,.04);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all .15s;
+  background: rgba(255,255,255,.015);
+}
+.cand-entry:hover { border-color: rgba(251,146,60,.15); }
+.cand-entry.selected { border-color: rgba(251,146,60,.25); background: rgba(251,146,60,.04); }
+.cand-entry .ce-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
+.cand-entry .ce-head .ce-title { font-size: 13px; font-weight: 600; color: #e4e4ec; }
+.cand-entry .ce-head .ce-conf {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 3px;
+}
+.cand-entry .ce-actions {
+  font-size: 11px;
+  color: #64748b;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+}
+.detail-pane .dt-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: #fb923c;
+  margin-bottom: 4px;
+}
+.detail-pane .dt-meta {
+  font-size: 11px;
+  color: #64748b;
+  margin-bottom: 12px;
+}
+.detail-pane .dt-step {
+  padding: 8px 10px;
+  border-left: 2px solid rgba(251,146,60,.2);
+  margin-bottom: 6px;
+  font-size: 12px;
+  color: #c4c4d0;
+}
+.detail-pane .dt-step .step-desc { color: #e4e4ec; font-weight: 500; }
+.detail-pane .dt-risk {
+  margin-top: 12px;
+  padding: 10px;
+  background: rgba(239,68,68,.04);
+  border: 1px solid rgba(239,68,68,.1);
+  border-radius: 6px;
+  font-size: 11px;
+  color: #fca5a5;
+}
+.detail-pane .dt-note {
+  margin-top: 8px;
+  font-size: 11px;
+  color: #64748b;
+  line-height: 1.5;
+}
+
+/* ===== OVERLAY: Slim Top Bar ===== */
+.overlay-slim {
+  width: 960px;
+  background: rgba(10,10,15,.95);
+  border: 1px solid rgba(251,146,60,.2);
+  border-radius: 12px;
+  padding: 6px 14px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  backdrop-filter: blur(12px);
+  box-shadow: 0 4px 24px rgba(0,0,0,.4);
+}
+.overlay-slim .prefix {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #fb923c;
+  flex-shrink: 0;
+}
+.overlay-slim .items {
+  flex: 1;
+  display: flex;
+  gap: 14px;
+  overflow: hidden;
+}
+.overlay-slim .items .i {
+  font-size: 11px;
+  color: #94a3b8;
+  white-space: nowrap;
+}
+.overlay-slim .items .i .rk { color: #fb923c; font-weight: 600; }
+.overlay-slim .items .i .pct { color: #22c55e; }
+.overlay-slim .divider { width: 1px; height: 18px; background: rgba(255,255,255,.06); flex-shrink: 0; }
+.overlay-slim .right { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.overlay-slim .right .btn-expand {
+  font-size: 16px;
+  color: #64748b;
+  cursor: pointer;
+  padding: 2px 6px;
+  transition: all .15s;
+}
+.overlay-slim .right .btn-expand:hover { color: #94a3b8; }
+</style>
+</head>
+<body>
+
+<div style="display:flex;flex-direction:column;align-items:center;gap:16px;">
+
+<!-- DASHBOARD -->
+<div class="dashboard">
+  <div class="dash-topbar">
+    <div class="brand">Hearth<span>Agent</span></div>
+    <div class="mid">
+      <span class="seg active">🎴 局面</span>
+      <span class="seg">🎯 候选路线</span>
+      <span class="seg">⚙️ 设置</span>
+      <span class="seg">📋 历史</span>
+    </div>
+    <div class="right">
+      <button class="btn-guide">📖 引导</button>
+      <span class="badge">● 待命中</span>
+    </div>
+  </div>
+
+  <div class="body-split">
+    <!-- Top: Snapshot -->
+    <div class="panel-top">
+      <div class="snap-mini">
+        <div class="col">
+          <div class="col-head">手牌 <span class="num">5</span></div>
+          <div class="sg"><span class="cst">4费</span> 火球术</div>
+          <div class="sg"><span class="cst">2费</span> 寒冰箭</div>
+          <div class="sg"><span class="cst">6费</span> 水元素</div>
+          <div class="sg"><span class="cst">3费</span> 奥术智慧</div>
+          <div class="sg"><span class="cst">0费</span> 幸运币</div>
+        </div>
+        <div class="col">
+          <div class="col-head">己方场面 <span class="num">3</span></div>
+          <div class="sg">💧 水元素 4/4</div>
+          <div class="sg">⚔️ 民兵指挥官 4/3</div>
+          <div class="sg">🛡 护甲锻造师 1/3</div>
+        </div>
+        <div class="col">
+          <div class="col-head">对手场面 <span class="num">2</span></div>
+          <div class="sg">👹 恶魔卫士 3/3 <span style="color:#fb923c;">嘲讽</span></div>
+          <div class="sg">🔥 烈焰小鬼 3/2</div>
+        </div>
+      </div>
+      <div class="mana-block">
+        <div class="num">5</div>
+        <div class="label">/ 7 法力</div>
+      </div>
+      <div class="action-strip">
+        <button class="btn-primary">⚡ 分析</button>
+        <button class="btn-ghost">停止</button>
+      </div>
+    </div>
+
+    <!-- Bottom: Candidates + Detail -->
+    <div class="panel-bottom">
+      <div class="cand-list">
+        <div class="sec-title">候选路线 · 3</div>
+        <div class="cand-entry selected">
+          <div class="ce-head">
+            <span class="ce-title">抢血压制</span>
+            <span class="ce-conf" style="color:#22c55e;">80%</span>
+          </div>
+          <div class="ce-actions">01 水元素→英雄 · 02 寒冰箭→英雄 · 03 结束</div>
+        </div>
+        <div class="cand-entry">
+          <div class="ce-head">
+            <span class="ce-title">控场解场</span>
+            <span class="ce-conf" style="color:#eab308;">65%</span>
+          </div>
+          <div class="ce-actions">01 寒冰箭→恶魔卫士 · 02 水元素→恶魔卫士 · 03 结束</div>
+        </div>
+        <div class="cand-entry" style="opacity:.6;">
+          <div class="ce-head">
+            <span class="ce-title">过牌找伤害</span>
+            <span class="ce-conf" style="color:#64748b;">45%</span>
+          </div>
+          <div class="ce-actions">01 奥术智慧→抽牌 · 02 结束</div>
+        </div>
+      </div>
+      <div class="detail-pane">
+        <div class="dt-title">抢血压制</div>
+        <div class="dt-meta">置信度 80% · Agent: 默认 · 耗时 4.2s</div>
+        <div class="dt-step">
+          <div class="step-desc">01. 水元素 → 攻击敌方英雄</div>
+          <div style="font-size:10px;color:#64748b;">水元素 4/4 攻击力 4</div>
+        </div>
+        <div class="dt-step">
+          <div class="step-desc">02. 寒冰箭 → 敌方英雄</div>
+          <div style="font-size:10px;color:#64748b;">造成 3 点伤害</div>
+        </div>
+        <div class="dt-step">
+          <div class="step-desc">03. 结束回合</div>
+        </div>
+        <div class="dt-risk">⚠ 风险：敌方下回合可能解掉水元素，失去场面优势</div>
+        <div class="dt-note">利用场面优势打脸，下回合火球术 (4费+4伤) 进入斩杀线。如果对手解不掉水元素，将持续压制血量。</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- OVERLAY: Slim Bar -->
+<div class="overlay-slim">
+  <div class="prefix">🎯 建议</div>
+  <div class="divider"></div>
+  <div class="items">
+    <span class="i"><span class="rk">#1</span> 水元素→英雄 <span class="pct">80%</span></span>
+    <span class="i"><span class="rk">#2</span> 寒冰箭→恶魔卫士 <span class="pct">65%</span></span>
+    <span class="i"><span class="rk">#3</span> 奥术智慧过牌 <span class="pct">45%</span></span>
+  </div>
+  <div class="divider"></div>
+  <div class="right">
+    <span style="font-size:10px;color:#64748b;">⚡5/7</span>
+    <span style="font-size:10px;color:#64748b;">⏱4.2s</span>
+    <button style="background:#fb923c;border:none;color:#0a0a0f;font-weight:700;font-size:10px;padding:3px 10px;border-radius:4px;cursor:pointer;">分析</button>
+    <span class="btn-expand">▾</span>
+  </div>
+</div>
+
+</div>
+
+</body>
+</html>

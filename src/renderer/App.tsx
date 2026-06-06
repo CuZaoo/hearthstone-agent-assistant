@@ -19,20 +19,14 @@ export function App() {
     const loadStatus = async () => {
       try {
         const nextStatus = await window.hearthstoneAgent.getStatus();
-        if (active) {
-          setStatus(nextStatus);
-        }
+        if (active) setStatus(nextStatus);
       } catch (error: unknown) {
-        if (active) {
-          setBootError(error instanceof Error ? error.message : "启动失败");
-        }
+        if (active) setBootError(error instanceof Error ? error.message : "启动失败");
       }
     };
     void loadStatus();
     const unsubscribe = window.hearthstoneAgent.onStatusChanged((nextStatus) => {
-      if (active) {
-        setStatus(nextStatus);
-      }
+      if (active) setStatus(nextStatus);
     });
     const timer = window.setInterval(() => void loadStatus(), 1_500);
     return () => {
@@ -42,18 +36,23 @@ export function App() {
     };
   }, []);
 
+  useEffect(() => {
+    if (overlay) {
+      document.body.style.background = "transparent";
+      document.body.style.backgroundImage = "none";
+    }
+  }, [overlay]);
+
   if (bootError) {
-    return (
-      <div className={overlay ? "overlay-shell" : "app-shell"}>
-        启动失败：{bootError}
-      </div>
-    );
+    return <div className="app-shell"><div className="dashboard" style={{padding:40,textAlign:"center",color:"#d56c61"}}>启动失败：{bootError}</div></div>;
   }
   if (!status) {
-    return <div className={overlay ? "overlay-shell" : "app-shell"}>正在启动…</div>;
+    return <div className="app-shell"><div className="dashboard" style={{padding:40,textAlign:"center",color:"#8a7a66"}}>正在启动…</div></div>;
   }
-  return overlay ? <Overlay status={status} /> : <Dashboard status={status} />;
+  return overlay ? <OverlayBar status={status} /> : <Dashboard status={status} />;
 }
+
+/* ==================== DASHBOARD ==================== */
 
 function Dashboard({ status }: { status: AppStatus }) {
   const [settings, setSettings] = useState(status.settings);
@@ -61,8 +60,11 @@ function Dashboard({ status }: { status: AppStatus }) {
   const [hasApiKey, setHasApiKey] = useState(false);
   const [history, setHistory] = useState<AnalysisResult[]>([]);
   const [busyElapsed, setBusyElapsed] = useState(0);
-  const [agentRequest, setAgentRequest] = useState<any>();
-  const [requestOpen, setRequestOpen] = useState(false);
+  const [guideOpen, setGuideOpen] = useState(!status.settings.guideDismissed);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [selectedCandidate, setSelectedCandidate] = useState<number | null>(null);
+  const [expandedHistory, setExpandedHistory] = useState<string | null>(null);
+
   const activeAgent = getActiveAgent(settings);
 
   useEffect(() => setSettings(status.settings), [status.settings]);
@@ -71,23 +73,15 @@ function Dashboard({ status }: { status: AppStatus }) {
     void window.hearthstoneAgent.listHistory().then(setHistory);
   }, [status.analysis, activeAgent.id]);
   useEffect(() => {
-    void window.hearthstoneAgent.getLastAgentRequest().then(setAgentRequest);
-  }, [status.analysis]);
-  useEffect(() => {
-    if (!status.busy) {
-      setBusyElapsed(0);
-      return;
-    }
-    const id = setInterval(() => setBusyElapsed((t) => t + 1), 1000);
+    if (!status.busy) { setBusyElapsed(0); return; }
+    const id = setInterval(() => setBusyElapsed(t => t + 1), 1000);
     return () => clearInterval(id);
   }, [status.busy]);
 
   const save = async () => {
-    const acceptedAt =
-      settings.liveRecommendationsEnabled &&
-      !settings.liveRecommendationsRiskAcceptedAt
-        ? new Date().toISOString()
-        : settings.liveRecommendationsRiskAcceptedAt;
+    const acceptedAt = settings.liveRecommendationsEnabled && !settings.liveRecommendationsRiskAcceptedAt
+      ? new Date().toISOString()
+      : settings.liveRecommendationsRiskAcceptedAt;
     await window.hearthstoneAgent.saveSettings({
       ...settings,
       liveRecommendationsRiskAcceptedAt: acceptedAt,
@@ -103,10 +97,8 @@ function Dashboard({ status }: { status: AppStatus }) {
   };
 
   const switchAgent = (agentId: string) => {
-    const nextAgent = settings.agents.find((agent) => agent.id === agentId);
-    if (!nextAgent) {
-      return;
-    }
+    const nextAgent = settings.agents.find(a => a.id === agentId);
+    if (!nextAgent) return;
     setSettings(syncLegacyAgentFields({ ...settings, activeAgentId: agentId }, nextAgent));
     setApiKey("");
   };
@@ -120,533 +112,620 @@ function Dashboard({ status }: { status: AppStatus }) {
       transport: "chat-completions",
       timeoutMs: activeAgent.timeoutMs,
     };
-    setSettings(syncLegacyAgentFields(
-      {
-        ...settings,
-        agents: [...settings.agents, nextAgent],
-        activeAgentId: nextAgent.id,
-      },
-      nextAgent,
-    ));
+    setSettings(syncLegacyAgentFields({
+      ...settings,
+      agents: [...settings.agents, nextAgent],
+      activeAgentId: nextAgent.id,
+    }, nextAgent));
     setApiKey("");
   };
 
   const removeActiveAgent = () => {
-    if (settings.agents.length <= 1) {
-      return;
-    }
-    const remaining = settings.agents.filter((agent) => agent.id !== activeAgent.id);
-    setSettings(syncLegacyAgentFields(
-      {
-        ...settings,
-        agents: remaining,
-        activeAgentId: remaining[0]?.id,
-      },
-      remaining[0],
-    ));
+    if (settings.agents.length <= 1) return;
+    const remaining = settings.agents.filter(a => a.id !== activeAgent.id);
+    setSettings(syncLegacyAgentFields({ ...settings, agents: remaining, activeAgentId: remaining[0]?.id }, remaining[0]));
     setApiKey("");
   };
 
+  const dismissGuide = () => {
+    setGuideOpen(false);
+    if (!settings.guideDismissed) {
+      window.hearthstoneAgent.saveSettings({ ...settings, guideDismissed: true }).catch(() => {});
+    }
+  };
+
+  const snapshot = status.snapshot;
+  const analysis = status.analysis;
+
   return (
-    <main className="app-shell">
-      <header className="hero">
-        <div>
-          <p className="eyebrow">READ-ONLY ANALYSIS ASSISTANT</p>
-          <h1>炉石对局 Agent 助手</h1>
-          <p>读取可见局面，校验后生成候选路线。不会操作游戏客户端。</p>
-        </div>
-        <div className="hero-actions">
-          <span className={status.busy ? "status-pill busy" : "status-pill"}>
-            {status.busy ? "处理中" : "待命"}
-          </span>
-          {status.busy && (
-            <span className="busy-timer">
-              <span>{busyElapsed}s</span>
-              <span className="busy-bar" />
+    <div className="app-shell">
+      <div className="dashboard">
+        {/* Tavern Header */}
+        <header className="tavern-header">
+          <div className="logo">
+            <div className="shield"><span>🛡</span></div>
+            <div className="text">
+              旅店老板的参谋
+              <small>炉石对局分析助手</small>
+            </div>
+          </div>
+          <div className="right">
+            <button className={`btn-header-primary${status.busy ? " loading" : ""}`} onClick={() => void window.hearthstoneAgent.analyze()} disabled={status.busy}>
+              {status.busy ? "分析中" : "⚔️ 召集参谋"}
+            </button>
+            <button className="btn-header-sm" onClick={() => setSettingsOpen(true)}>⚙️</button>
+            <button className="btn-header-sm" onClick={() => void window.hearthstoneAgent.toggleOverlay()}>🏷️</button>
+            <button className="btn-guide" onClick={() => setGuideOpen(true)}>📖 旅店指南</button>
+            <div className="candle-status">
+              <span className={`flame${status.busy ? " busy" : ""}`} />
+              <span>{status.busy ? "分析中" : "待命中"}</span>
+            </div>
+            <div className="window-controls">
+              <button className="wc-btn wc-minimize" onClick={() => void window.hearthstoneAgent.minimizeWindow()} title="最小化">—</button>
+              <button className="wc-btn wc-maximize" onClick={() => void window.hearthstoneAgent.maximizeWindow()} title="最大化">□</button>
+              <button className="wc-btn wc-close" onClick={() => void window.hearthstoneAgent.closeWindow()} title="关闭">×</button>
+            </div>
+          </div>
+        </header>
+
+        {/* Dossier */}
+        <div className="dossier">
+          <span className="item"><span className="dot green" /> <span className="val">Power.log</span> {status.log.available ? "已连接" : "未连接"}</span>
+          <span className="item">📜 卡牌 <span className="val">{status.catalog.entryCount ?? "—"}</span></span>
+          {snapshot && <span className="item">⚔️ 回合 <span className="val">{snapshot.turn}</span></span>}
+          {snapshot && <span className="item">⚡ <span className="val">{snapshot.self.mana}</span>/{snapshot.self.maxMana}</span>}
+          {status.visualValidation && (
+            <span className="item">
+              <span className={`dot ${status.visualValidation.ok ? "green" : status.visualValidation.errors.length > 0 ? "red" : "amber"}`} />
+              视觉校验 <span className="val">{status.visualValidation.matchedEntityIds.length}/{status.visualValidation.matchedEntityIds.length}</span>
             </span>
           )}
-          <button className="primary" onClick={() => void window.hearthstoneAgent.analyze()}>
-            {status.busy ? "分析中…" : "分析当前局面"}
-          </button>
-          {status.busy && (
-            <button className="danger" onClick={() => void window.hearthstoneAgent.stopAnalysis()}>
-              停止分析
-            </button>
-          )}
-        </div>
-      </header>
-
-      <section className="status-grid animate-in">
-        <StatusCard
-          title="Power.log"
-          ok={status.log.available}
-          detail={`${status.log.message} ${status.log.path}`}
-        />
-        <StatusCard
-          title="卡牌快照"
-          ok={status.catalog.ready}
-          detail={`${status.catalog.version} · build ${status.catalog.gameBuild ?? "未知"} · ${status.catalog.entryCount} 张`}
-        />
-        <StatusCard
-          title="当前局面"
-          ok={Boolean(status.snapshot)}
-          detail={
-            status.snapshot
-              ? `回合 ${status.snapshot.turn} · 手牌 ${status.snapshot.self.handCount} · 场面 ${status.snapshot.self.board.length}/${status.snapshot.opponent.board.length}`
-              : "等待日志事件"
-          }
-        />
-        <StatusCard
-          title="视觉校验"
-          ok={status.visualValidation?.ok === true}
-          detail={
-            status.visualValidation?.errors[0] ??
-            (status.visualValidation
-              ? `已匹配 ${status.visualValidation.matchedEntityIds.length} 个实体`
-              : "尚未执行")
-          }
-        />
-      </section>
-
-      {status.message && <div className="message">{status.message}</div>}
-
-      <SnapshotPreview status={status} />
-
-      <section className="panel animate-in animate-in-d3">
-        <h2>设置</h2>
-        <div className="form-grid">
-          <Field label="当前 Agent">
-            <select
-              value={activeAgent.id}
-              onChange={(event) => switchAgent(event.target.value)}
-            >
-              {settings.agents.map((agent) => (
-                <option value={agent.id} key={agent.id}>
-                  {agent.name}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Agent 名称">
-            <input
-              value={activeAgent.name}
-              onChange={(event) => updateActiveAgent({ name: event.target.value })}
-            />
-          </Field>
-          <Field label="Power.log 路径或炉石安装目录">
-            <input
-              value={settings.powerLogPath}
-              onChange={(event) =>
-                setSettings({ ...settings, powerLogPath: event.target.value })
-              }
-            />
-          </Field>
-          <Field label="接口地址">
-            <input
-              value={activeAgent.baseUrl}
-              onChange={(event) =>
-                updateActiveAgent({ baseUrl: event.target.value })
-              }
-            />
-          </Field>
-          <Field label="模型名称">
-            <input
-              value={activeAgent.model}
-              placeholder="由接口供应商提供"
-              onChange={(event) =>
-                updateActiveAgent({ model: event.target.value })
-              }
-            />
-          </Field>
-          <Field label={`${activeAgent.name} API Key ${hasApiKey ? "（已保存）" : "（未保存）"}`}>
-            <input
-              type="password"
-              value={apiKey}
-              placeholder="仅保存到 Windows 凭据管理器"
-              onChange={(event) => setApiKey(event.target.value)}
-            />
-          </Field>
-          <Field label="传输协议">
-            <select
-              value={activeAgent.transport}
-              onChange={(event) =>
-                updateActiveAgent({
-                  transport: event.target.value as AppSettings["transport"],
-                })
-              }
-            >
-              <option value="responses">Responses API</option>
-              <option value="chat-completions">Chat Completions API</option>
-            </select>
-          </Field>
-          <Field label="超时（毫秒）">
-            <input
-              type="number"
-              value={activeAgent.timeoutMs}
-              onChange={(event) =>
-                updateActiveAgent({ timeoutMs: Number(event.target.value) })
-              }
-            />
-          </Field>
-          <Field label="候选路线数量（1-5）">
-            <input
-              type="number"
-              min={1}
-              max={5}
-              value={settings.maxCandidates}
-              onChange={(event) =>
-                setSettings({
-                  ...settings,
-                  maxCandidates: Number(event.target.value),
-                })
-              }
-            />
-          </Field>
-        </div>
-
-        <label className="risk-check">
-          <input
-            type="checkbox"
-            checked={settings.liveRecommendationsEnabled}
-            onChange={(event) =>
-              setSettings({
-                ...settings,
-                liveRecommendationsEnabled: event.target.checked,
-                liveRecommendationsRiskAcceptedAt: event.target.checked
-                  ? settings.liveRecommendationsRiskAcceptedAt
-                  : undefined,
-              })
-            }
-          />
-          <span>
-            我确认已获得使用正式对局实时建议的授权，并理解账号与合规风险。
+          <span className="dossier-right">
+            {status.busy && <span>⏱ {busyElapsed}s</span>}
           </span>
-        </label>
-
-        <label className="risk-check" style={{ marginTop: 0 }}>
-          <input
-            type="checkbox"
-            checked={settings.autoAnalyze}
-            onChange={async (event) => {
-              const next = { ...settings, autoAnalyze: event.target.checked };
-              setSettings(next);
-              await window.hearthstoneAgent.saveSettings(next);
-            }}
-          />
-          <span>
-            自动分析：每当局面快照更新时（己方回合开始）自动发起 Agent 分析
-          </span>
-        </label>
-
-        <div className="button-row">
-          <button className="primary" onClick={() => void save()}>
-            保存设置
-          </button>
-          <button onClick={() => void window.hearthstoneAgent.testAgentConnection()}>
-            测试 Agent 连接
-          </button>
-          <button onClick={() => void window.hearthstoneAgent.toggleOverlay()}>
-            显示或隐藏悬浮窗
-          </button>
-          <button onClick={addAgent}>新增 Agent</button>
-          <button onClick={removeActiveAgent} disabled={settings.agents.length <= 1}>
-            删除当前 Agent
-          </button>
         </div>
-      </section>
 
-      <section className="panel animate-in animate-in-d4">
-        <h2>最近分析</h2>
-        {history.length === 0 ? (
-          <p className="muted">暂无历史记录。</p>
-        ) : (
-          history.slice(0, 8).map((item) => (
-            <div className="history-item" key={`${item.snapshotRevision}-${item.createdAt}`}>
-              <strong>{item.summary}</strong>
-              <span>{item.createdAt ? new Date(item.createdAt).toLocaleString() : ""}</span>
+        {/* Status Message */}
+        {status.message && <div className="message-bar">{status.message}</div>}
+
+        {/* Body: Battlefield + Advisor */}
+        <div className="dash-body">
+          {/* Battlefield Column */}
+          <div className="battlefield">
+            {!snapshot ? (
+              <div className="empty-state">
+                <p>等待 Power.log 产生对局事件</p>
+                <small>启动炉石并进入对局后自动检测</small>
+              </div>
+            ) : (
+              <>
+                {/* Hand Zone */}
+                <div className="zone">
+                  <div className="zone-title">✋ 手牌 <span className="count">{snapshot.self.hand.length}</span></div>
+                  <div className="zone-cards">
+                    {snapshot.self.hand.map(card => (
+                      <div className="zone-card" key={card.entityId}>
+                        <span>{cardTitle(card)} <span className="cost-badge">{cardCost(card)}费</span></span>
+                        <span className="stats">#{card.entityId}</span>
+                      </div>
+                    ))}
+                    {snapshot.self.hand.length === 0 && <div className="zone-card" style={{color:"var(--text-muted)",fontSize:11,justifyContent:"center"}}>空手牌</div>}
+                  </div>
+                </div>
+
+                {/* Self Board */}
+                <div className="zone">
+                  <div className="zone-title">🛡 己方战场 <span className="count">{snapshot.self.board.length}</span></div>
+                  <div className="zone-cards">
+                    {snapshot.self.board.map(card => (
+                      <div className="zone-card" key={card.entityId}>
+                        <span>{cardTitle(card)} {card.attack !== undefined && <span className="stats">{card.attack}/{card.health}</span>}</span>
+                        <span className="stats">#{card.entityId}{card.taunt ? " [嘲讽]" : ""}{card.exhausted ? " [已行动]" : ""}</span>
+                      </div>
+                    ))}
+                    {snapshot.self.board.length === 0 && <div className="zone-card" style={{color:"var(--text-muted)",fontSize:11,justifyContent:"center"}}>空场</div>}
+                  </div>
+                </div>
+
+                {/* Opponent Board */}
+                <div className="zone">
+                  <div className="zone-title">👹 对手战场 <span className="count">{snapshot.opponent.board.length}</span></div>
+                  <div className="zone-cards">
+                    {snapshot.opponent.board.map(card => (
+                      <div className="zone-card" key={card.entityId}>
+                        <span>{cardTitle(card)} {card.attack !== undefined && <span className="stats">{card.attack}/{card.health}</span>}</span>
+                        <span className="stats">#{card.entityId}{card.taunt ? <span className="tag-taunt"> [嘲讽]</span> : ""}</span>
+                      </div>
+                    ))}
+                    {snapshot.opponent.board.length === 0 && <div className="zone-card" style={{color:"var(--text-muted)",fontSize:11,justifyContent:"center"}}>空场</div>}
+                  </div>
+                </div>
+
+                {/* Action Strip */}
+                <div className="action-strip">
+                  {status.busy && (
+                    <button className="btn-secondary" onClick={() => void window.hearthstoneAgent.stopAnalysis()}>停止</button>
+                  )}
+                  <span className="timer">⏱ 对手手牌 {snapshot.opponent.handCount} · 奥秘 {snapshot.opponent.secretCount}</span>
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* Advisor Column */}
+          <div className="advisor">
+            <div className="scroll-title">~ 谋略卷轴 ~</div>
+            <div className="scroll-sub">参谋分析 · {activeAgent.name}</div>
+
+            <div className="advisor-content">
+              {!analysis ? (
+                <div className="empty-state">
+                  <p>{status.message ?? "按 Ctrl+Shift+A 分析当前局面"}</p>
+                  <small>{settings.hotkeys.analyze} 分析 · {settings.hotkeys.toggleOverlay} 切换悬浮栏</small>
+                </div>
+              ) : (
+                <>
+                  <p style={{color:"var(--gold-light)",fontSize:13,lineHeight:1.5,marginBottom:12}}>
+                    {analysis.summary}
+                    {analysis.stale && <span style={{color:"var(--red)",marginLeft:8,fontSize:11}}>(已过期)</span>}
+                  </p>
+                  {analysis.candidates.map(candidate => (
+                    <div
+                      key={candidate.rank}
+                      className={`vote-card${selectedCandidate === candidate.rank ? " selected" : ""}`}
+                      onClick={() => setSelectedCandidate(selectedCandidate === candidate.rank ? null : candidate.rank)}
+                    >
+                      <div className="vc-head">
+                        <span className="vc-title">
+                          {labelForRank(candidate.rank)}. {extractAgentLabel(candidate.rationale)}
+                        </span>
+                        <span className={`vc-conf${candidate.confidence < 0.6 ? " low" : candidate.confidence < 0.75 ? " med" : ""}`}>
+                          {Math.round(candidate.confidence * 100)}%
+                        </span>
+                      </div>
+                      {candidate.winRateBefore !== undefined && (
+                        <div style={{fontSize:10,color:"var(--text-muted)",marginBottom:4}}>
+                          胜率 {Math.round(candidate.winRateBefore * 100)}% → {Math.round((candidate.winRateAfter ?? candidate.winRateBefore) * 100)}%
+                        </div>
+                      )}
+                      <div className="vc-actions">
+                        {candidate.actions.map((action, i) => (
+                          <div key={i}>{i + 1}. {action.description}</div>
+                        ))}
+                      </div>
+                      <div className="vc-foot">{candidate.rationale}</div>
+                      {selectedCandidate === candidate.rank && candidate.risks.length > 0 && (
+                        <div className="vc-risks">⚠ 风险：{candidate.risks.join("；")}</div>
+                      )}
+                    </div>
+                  ))}
+                  {analysis.warnings.length > 0 && (
+                    <div className="warnings">{analysis.warnings.join(" · ")}</div>
+                  )}
+                </>
+              )}
             </div>
-          ))
-        )}
-      </section>
-
-      {agentRequest && (
-        <section className="panel animate-in animate-in-d4">
-          <h2
-            className="collapsible-header"
-            onClick={() => setRequestOpen(!requestOpen)}
-          >
-            <span>最近 Agent 请求</span>
-            <span className="collapse-arrow">{requestOpen ? "▾" : "▸"}</span>
-          </h2>
-          {requestOpen && (
-            <pre className="request-block">{JSON.stringify(agentRequest, null, 2)}</pre>
-          )}
-        </section>
-      )}
-    </main>
-  );
-}
-
-function SnapshotPreview({ status }: { status: AppStatus }) {
-  const snapshot = status.snapshot;
-  if (!snapshot) {
-    return (
-      <section className="panel animate-in animate-in-d2">
-        <h2>当前可见局面</h2>
-        <p className="muted">等待 Power.log 产生对局事件。</p>
-      </section>
-    );
-  }
-
-  return (
-    <section className="panel animate-in animate-in-d2">
-      <h2>当前可见局面</h2>
-      <div className="snapshot-meta">
-        <span>回合 {snapshot.turn}</span>
-        <span>行动方：{activePlayerLabel(snapshot.activePlayer)}</span>
-        <span>
-          法力：{snapshot.self.mana}/{snapshot.self.maxMana}
-        </span>
-        <span>对手手牌：{snapshot.opponent.handCount}</span>
-        <span>对手奥秘：{snapshot.opponent.secretCount}</span>
-        {snapshot.animationPending && <span className="stale">动画未结束</span>}
-      </div>
-      <div className="snapshot-grid">
-        <SnapshotColumn
-          title="己方手牌"
-          empty="未识别到己方手牌"
-          cards={snapshot.self.hand}
-        />
-        <SnapshotColumn
-          title="己方场面"
-          empty="己方场面为空"
-          cards={snapshot.self.board}
-        />
-        <SnapshotColumn
-          title="对手场面"
-          empty="对手场面为空"
-          cards={snapshot.opponent.board}
-        />
-      </div>
-      {snapshot.uncertainties.length > 0 && (
-        <p className="snapshot-warning">
-          不确定项：{snapshot.uncertainties.join("；")}
-        </p>
-      )}
-    </section>
-  );
-}
-
-function SnapshotColumn({
-  title,
-  empty,
-  cards,
-}: {
-  title: string;
-  empty: string;
-  cards: CardReference[];
-}) {
-  return (
-    <div className="snapshot-column">
-      <h3>
-        {title} <span>{cards.length}</span>
-      </h3>
-      {cards.length === 0 ? (
-        <p className="muted">{empty}</p>
-      ) : (
-        <div className="card-list">
-          {cards.map((card) => (
-            <div className="card-chip" key={card.entityId}>
-              <strong>{cardTitle(card)}</strong>
-              <small>{cardDetails(card)}</small>
-            </div>
-          ))}
+          </div>
         </div>
+      </div>
+
+      {/* Guide Overlay */}
+      {guideOpen && <GuideOverlay settings={settings} onClose={dismissGuide} />}
+
+      {/* Settings Panel */}
+      {settingsOpen && (
+        <SettingsPanel
+          settings={settings}
+          apiKey={apiKey}
+          hasApiKey={hasApiKey}
+          activeAgent={activeAgent}
+          onUpdateSettings={setSettings}
+          onSetApiKey={setApiKey}
+          onSave={save}
+          onClose={() => setSettingsOpen(false)}
+          onSwitchAgent={switchAgent}
+          onAddAgent={addAgent}
+          onRemoveAgent={removeActiveAgent}
+          onUpdateAgent={updateActiveAgent}
+        />
       )}
     </div>
   );
 }
 
-function Overlay({ status }: { status: AppStatus }) {
+/* ==================== OVERLAY BAR ==================== */
+
+function OverlayBar({ status }: { status: AppStatus }) {
   const analysis = status.analysis;
+  const candidates = analysis?.candidates ?? [];
   const [busyElapsed, setBusyElapsed] = useState(0);
-  const [history, setHistory] = useState<AnalysisResult[]>([]);
-  const [expandedId, setExpandedId] = useState<string | null>(null);
-  const activeAgent = getActiveAgent(status.settings);
+  const [compact, setCompact] = useState(false);
+  const [tickerIdx, setTickerIdx] = useState(0);
+  const [tickerHover, setTickerHover] = useState(false);
 
   useEffect(() => {
-    if (!status.busy) {
-      setBusyElapsed(0);
-      return;
-    }
-    const id = setInterval(() => setBusyElapsed((t) => t + 1), 1000);
+    if (!status.busy) { setBusyElapsed(0); return; }
+    const id = setInterval(() => setBusyElapsed(t => t + 1), 1000);
     return () => clearInterval(id);
   }, [status.busy]);
 
   useEffect(() => {
-    void window.hearthstoneAgent.listHistory().then(setHistory);
-  }, [status.analysis]);
+    setTickerIdx(0);
+  }, [analysis]);
 
-  const handleAnalyze = () => void window.hearthstoneAgent.analyze();
-  const switchOverlayAgent = async (agentId: string) => {
-    const nextAgent = status.settings.agents.find((agent) => agent.id === agentId);
-    if (!nextAgent) {
-      return;
-    }
-    await window.hearthstoneAgent.saveSettings(
-      syncLegacyAgentFields(
-        { ...status.settings, activeAgentId: agentId },
-        nextAgent,
-      ),
-    );
-  };
+  useEffect(() => {
+    if (candidates.length < 2 || tickerHover || status.busy || !compact) return;
+    const id = setInterval(() => setTickerIdx(i => (i + 1) % candidates.length), 4000);
+    return () => clearInterval(id);
+  }, [candidates.length, tickerHover, status.busy, compact]);
 
-  return (
-    <aside className="overlay-shell">
-      <div className="overlay-header">
-        <span>Agent 建议</span>
-        <div className="overlay-header-actions">
-          <select
-            className="agent-select-sm"
-            value={activeAgent.id}
-            onChange={(event) => void switchOverlayAgent(event.target.value)}
-            title="切换 Agent"
-          >
-            {status.settings.agents.map((agent) => (
-              <option value={agent.id} key={agent.id}>
-                {agent.name}
-              </option>
-            ))}
-          </select>
-          <button className="primary-sm" onClick={handleAnalyze} title="分析当前局面">
-            {status.busy ? "分析中" : "分析"}
-          </button>
-          {status.busy && (
-            <button className="danger-sm" onClick={() => void window.hearthstoneAgent.stopAnalysis()} title="停止分析">
-              停止
-            </button>
-          )}
-          {status.busy && (
-            <span className="busy-timer">
-              <span>{busyElapsed}s</span>
-              <span className="busy-bar" />
-            </span>
-          )}
-          <span className={analysis?.stale ? "stale" : "live"}>
-            {analysis?.stale ? "已过期" : status.busy ? "分析中" : "当前"}
+  const ticker = candidates[tickerIdx];
+
+  /* ======== COMPACT TICKER ======== */
+  if (compact) {
+    return (
+      <div className="overlay-shell" style={{justifyContent:"flex-end"}}>
+        <div className="ol-ticker">
+          <span className={`sign-icon${status.busy ? " busy" : ""}`}>
+            {status.busy ? "⏳" : "🍺"}
           </span>
+
+          {status.busy ? (
+            <span className="ticker-text">分析中… {busyElapsed}s</span>
+          ) : !analysis ? (
+            <span className="ticker-text">{status.message ?? "按 Ctrl+Shift+A"}</span>
+          ) : ticker ? (
+            <div
+              className="ticker-body"
+              onMouseEnter={() => setTickerHover(true)}
+              onMouseLeave={() => setTickerHover(false)}
+              onClick={() => setTickerIdx(i => (i + 1) % candidates.length)}
+            >
+              <span className="ticker-rank">{labelForRank(ticker.rank)}</span>
+              <span className="ticker-action">
+                {extractAgentPrefix(ticker.rationale) && (
+                  <span className="ticker-agent">[{extractAgentPrefix(ticker.rationale)}]</span>
+                )}
+                {ticker.actions[0]?.description ?? "—"}
+              </span>
+              {ticker.winRateBefore !== undefined && (
+                <span className="ticker-wr">
+                  {Math.round(ticker.winRateBefore * 100)}→{Math.round((ticker.winRateAfter ?? ticker.winRateBefore) * 100)}%
+                </span>
+              )}
+              <span className={`ticker-pct${ticker.confidence < 0.6 ? " low" : ticker.confidence < 0.75 ? " med" : " high"}`}>
+                {Math.round(ticker.confidence * 100)}%
+              </span>
+            </div>
+          ) : null}
+
+          {candidates.length > 1 && !status.busy && (
+            <div className="ticker-dots">
+              {candidates.map((_, i) => (
+                <button key={i} className={`tdot${i === tickerIdx ? " act" : ""}`} onClick={() => setTickerIdx(i)} />
+              ))}
+            </div>
+          )}
+
+          {analysis?.stale && <span className="ticker-stale">已过期</span>}
+
+          <div className="ticker-actions">
+            <button className={`btn-gold${status.busy ? " loading" : ""}`} onClick={() => void window.hearthstoneAgent.analyze()} disabled={status.busy}>
+              {status.busy ? "分析中" : "分析"}
+            </button>
+            {status.busy && <button className="btn-dim" onClick={() => void window.hearthstoneAgent.stopAnalysis()}>停止</button>}
+            <button className="btn-dim" onClick={() => setCompact(false)}>详细</button>
+            <button className="btn-dim" onClick={() => void window.hearthstoneAgent.showMainWindow()}>主界面</button>
+            <button className="btn-dim" onClick={() => void window.hearthstoneAgent.toggleOverlay()}>隐藏</button>
+          </div>
         </div>
       </div>
-      <div className="overlay-content">
+    );
+  }
+
+  /* ======== DETAILED PANEL ======== */
+  return (
+    <div className="overlay-shell">
+      <div className="overlay-panel">
+        {/* Header */}
+        <div className="ol-header">
+          <div className="ol-shield"><span>⚔</span></div>
+          {status.busy ? (
+            <span className="ol-title">分析中…</span>
+          ) : !analysis ? (
+            <span className="ol-title">{status.message ?? "按 Ctrl+Shift+A 分析"}</span>
+          ) : (
+            <>
+              <span className="ol-title">
+                参谋分析
+                {candidates[0] && extractAgentPrefix(candidates[0].rationale) && (
+                  <span className="ol-agent"> · {extractAgentPrefix(candidates[0].rationale)}</span>
+                )}
+              </span>
+              {analysis.stale && <span className="ol-stale">已过期</span>}
+            </>
+          )}
+        </div>
+
+        {/* Body */}
         {!analysis ? (
-          <div className="overlay-empty">
-            <p>{status.message ?? "按 Ctrl+Shift+A 分析当前局面"}</p>
-            <small>Ctrl+Shift+O 显示或隐藏悬浮窗</small>
-          </div>
+          status.busy ? (
+            <div className="ol-center">
+              <span>分析中… {busyElapsed}s</span>
+            </div>
+          ) : (
+            <div className="ol-center">
+              <button className="btn-start" onClick={() => void window.hearthstoneAgent.analyze()}>开始分析</button>
+            </div>
+          )
         ) : (
           <>
-            <p className="overlay-summary">{analysis.summary}</p>
-            {analysis.candidates.map((candidate) => (
-              <Candidate key={candidate.rank} candidate={candidate} />
-            ))}
-            {analysis.warnings.length > 0 && (
-              <div className="warnings">{analysis.warnings.join(" · ")}</div>
+            {/* Summary */}
+            {analysis.summary && (
+              <div className="ol-summary">{analysis.summary}</div>
             )}
-          </>
-        )}
 
-        {history.length > 0 && (
-          <div className="overlay-history">
-            <div className="overlay-history-header">
-              <span>历史推荐</span>
-              <span>{history.length}</span>
-            </div>
-            {history.slice(0, 10).map((item) => {
-              const key = `${item.snapshotRevision}-${item.createdAt ?? ""}`;
-              const open = expandedId === key;
-              return (
-                <div
-                  key={key}
-                  className={`history-entry${open ? " expanded" : ""}`}
-                  onClick={() => setExpandedId(open ? null : key)}
-                >
-                  <div className="history-entry-title">
-                    <strong>{item.summary}</strong>
-                    <time>{item.createdAt ? new Date(item.createdAt).toLocaleString() : ""}</time>
-                  </div>
-                  {open && (
-                    <div className="history-entry-detail">
-                      {item.candidates.map((candidate) => (
-                        <Candidate key={candidate.rank} candidate={candidate} />
-                      ))}
-                      {item.warnings.length > 0 && (
-                        <div className="warnings">{item.warnings.join(" · ")}</div>
+            {/* Candidate cards */}
+            <div className="ol-candidates">
+              {candidates.map(candidate => (
+                <div key={candidate.rank} className="ol-candidate">
+                  <div className="ol-cand-head">
+                    <span className="ol-rank">{labelForRank(candidate.rank)}</span>
+                    <span className="ol-action">
+                      {extractAgentPrefix(candidate.rationale) && (
+                        <span className="ol-agent-tag">[{extractAgentPrefix(candidate.rationale)}]</span>
                       )}
-                    </div>
+                      {candidate.actions[0]?.description ?? "—"}
+                    </span>
+                    {candidate.winRateBefore !== undefined && (
+                      <span className="ol-winrate">
+                        {Math.round(candidate.winRateBefore * 100)}%→{Math.round((candidate.winRateAfter ?? candidate.winRateBefore) * 100)}%
+                      </span>
+                    )}
+                    <span className={`ol-pct${candidate.confidence < 0.6 ? " low" : candidate.confidence < 0.75 ? " med" : " high"}`}>
+                      {Math.round(candidate.confidence * 100)}%
+                    </span>
+                  </div>
+                  <div className="ol-rationale">{candidate.rationale}</div>
+                  {candidate.risks.length > 0 && (
+                    <div className="ol-risks">⚠ {candidate.risks.join(" · ")}</div>
                   )}
                 </div>
-              );
-            })}
-          </div>
+              ))}
+            </div>
+
+            {/* Warnings */}
+            {analysis.warnings.length > 0 && (
+              <div className="ol-warnings">⚠ {analysis.warnings.join(" · ")}</div>
+            )}
+
+            {/* Footer */}
+            <div className="ol-footer">
+              <button className={`btn-gold${status.busy ? " loading" : ""}`} onClick={() => void window.hearthstoneAgent.analyze()} disabled={status.busy}>
+                {status.busy ? "分析中" : "分析"}
+              </button>
+              {status.busy && <button className="btn-dim" onClick={() => void window.hearthstoneAgent.stopAnalysis()}>停止</button>}
+              <button className="btn-dim" onClick={() => setCompact(true)}>简略</button>
+              <button className="btn-dim" onClick={() => void window.hearthstoneAgent.showMainWindow()}>主界面</button>
+              <button className="btn-dim" onClick={() => void window.hearthstoneAgent.toggleOverlay()}>隐藏</button>
+            </div>
+          </>
         )}
       </div>
-    </aside>
+    </div>
   );
 }
 
-function Candidate({ candidate }: { candidate: CandidateLine }) {
+/* ==================== GUIDE OVERLAY ==================== */
+
+function GuideOverlay({ settings, onClose }: { settings: AppSettings; onClose: () => void }) {
   return (
-    <article className="candidate">
-      <div className="candidate-title">
-        <strong>路线 {candidate.rank}</strong>
-        <span>{Math.round(candidate.confidence * 100)}%</span>
+    <div className="guide-overlay" onClick={onClose}>
+      <div className="guide-panel" onClick={e => e.stopPropagation()}>
+        <div className="guide-header">
+          <h2>~ 旅店指南 ~</h2>
+          <button className="close-btn" onClick={onClose}>×</button>
+        </div>
+        <div className="guide-body">
+          <GuideStep num={1} title="启动与连接">
+            启动炉石进入对局后，程序自动读取 Power.log 并识别局面状态。
+            确保已在炉石安装目录的 <kbd>options.txt</kbd> 中启用 debug 日志。
+          </GuideStep>
+          <GuideStep num={2} title="分析当前局面">
+            点击 <kbd>⚔️ 召集参谋</kbd> 按钮或按快捷键 <kbd>{settings.hotkeys.analyze}</kbd> 发起分析。
+            Agent 会根据可见局面返回候选路线。
+          </GuideStep>
+          <GuideStep num={3} title="查看候选路线">
+            每条路线显示推荐动作、置信度和理由。点击路线可展开风险提示。
+            顶部 "~ 谋略卷轴 ~" 区域会展示所有候选路线。
+          </GuideStep>
+          <GuideStep num={4} title="悬浮栏">
+            按 <kbd>{settings.hotkeys.toggleOverlay}</kbd> 切换游戏内悬浮栏。
+            悬浮栏精简显示当前推荐，无需切换到主窗口即可查看。
+          </GuideStep>
+          <GuideStep num={5} title="Agent 配置">
+            在设置面板中可配置多个 Agent（如 OpenAI、DeepSeek 等），
+            并开启自动分析、多 Agent 对比等高级功能。
+          </GuideStep>
+        </div>
+        <div className="guide-footer">
+          <button className="btn-guide" onClick={onClose}>开始使用</button>
+        </div>
       </div>
-      <ol>
-        {candidate.actions.map((action, index) => (
-          <li key={`${action.type}-${index}`}>{action.description}</li>
-        ))}
-      </ol>
-      <p>{candidate.rationale}</p>
-      {candidate.risks.length > 0 && <small>风险：{candidate.risks.join("；")}</small>}
-    </article>
+    </div>
   );
 }
+
+function GuideStep({ num, title, children }: { num: number; title: string; children: React.ReactNode }) {
+  return (
+    <div className="guide-step" style={{animationDelay: `${num * 0.06}s`}}>
+      <div className="step-num">{num}</div>
+      <div className="step-content">
+        <h3>{title}</h3>
+        <p>{children}</p>
+      </div>
+    </div>
+  );
+}
+
+/* ==================== SETTINGS PANEL ==================== */
+
+function SettingsPanel({
+  settings, apiKey, hasApiKey, activeAgent,
+  onUpdateSettings, onSetApiKey, onSave, onClose,
+  onSwitchAgent, onAddAgent, onRemoveAgent, onUpdateAgent,
+}: {
+  settings: AppSettings; apiKey: string; hasApiKey: boolean; activeAgent: AgentProfile;
+  onUpdateSettings: (s: AppSettings) => void; onSetApiKey: (k: string) => void;
+  onSave: () => void; onClose: () => void;
+  onSwitchAgent: (id: string) => void; onAddAgent: () => void; onRemoveAgent: () => void;
+  onUpdateAgent: (patch: Partial<AgentProfile>) => void;
+}) {
+  return (
+    <div className="guide-overlay" onClick={onClose} style={{zIndex:99}}>
+      <div className="settings-panel" onClick={e => e.stopPropagation()}>
+        <div className="settings-header">
+          <h2>⚙️ 设置</h2>
+          <button className="close-btn" style={{
+            background:"transparent",border:"1px solid rgba(201,160,74,0.12)",color:"var(--text-muted)",
+            width:28,height:28,borderRadius:"50%",fontSize:14,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"
+          }} onClick={onClose}>×</button>
+        </div>
+        <div className="settings-body">
+          {/* Agent Settings */}
+          <div className="settings-group">
+            <div className="group-label">Agent 配置</div>
+            <div className="field-row">
+              <label>当前 Agent</label>
+              <select value={activeAgent.id} onChange={e => onSwitchAgent(e.target.value)}>
+                {settings.agents.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+              </select>
+            </div>
+            <div className="field-row">
+              <label>名称</label>
+              <input value={activeAgent.name} onChange={e => onUpdateAgent({ name: e.target.value })} />
+            </div>
+            <div className="field-row">
+              <label>接口地址</label>
+              <input value={activeAgent.baseUrl} onChange={e => onUpdateAgent({ baseUrl: e.target.value })} />
+            </div>
+            <div className="field-row">
+              <label>模型</label>
+              <input value={activeAgent.model} placeholder="由供应商提供" onChange={e => onUpdateAgent({ model: e.target.value })} />
+            </div>
+            <div className="field-row">
+              <label>API Key {hasApiKey ? "（已保存）" : "（未保存）"}</label>
+              <input type="password" value={apiKey} placeholder="仅保存到凭据管理器" onChange={e => onSetApiKey(e.target.value)} />
+            </div>
+            <div className="field-row">
+              <label>传输协议</label>
+              <select value={activeAgent.transport} onChange={e => onUpdateAgent({ transport: e.target.value as AppSettings["transport"] })}>
+                <option value="responses">Responses API</option>
+                <option value="chat-completions">Chat Completions API</option>
+              </select>
+            </div>
+            <div className="field-row">
+              <label>超时 (ms)</label>
+              <input type="number" value={activeAgent.timeoutMs} onChange={e => onUpdateAgent({ timeoutMs: Number(e.target.value) })} />
+            </div>
+            <div className="settings-actions">
+              <button className="btn-save" onClick={onAddAgent}>新增 Agent</button>
+              <button className="btn-test" onClick={onRemoveAgent} disabled={settings.agents.length <= 1}>删除</button>
+            </div>
+          </div>
+
+          {/* General Settings */}
+          <div className="settings-group">
+            <div className="group-label">通用</div>
+            <div className="field-row">
+              <label>Power.log 路径</label>
+              <input value={settings.powerLogPath} onChange={e => onUpdateSettings({ ...settings, powerLogPath: e.target.value })} />
+            </div>
+            <div className="field-row">
+              <label>候选路线数</label>
+              <input type="number" min={1} max={5} value={settings.maxCandidates} onChange={e => onUpdateSettings({ ...settings, maxCandidates: Number(e.target.value) })} />
+            </div>
+            <div className="field-row">
+              <label>语言</label>
+              <select value={settings.language} onChange={e => onUpdateSettings({ ...settings, language: e.target.value as "zhCN" | "enUS" })}>
+                <option value="zhCN">中文</option>
+                <option value="enUS">English</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Toggles */}
+          <div className="settings-group">
+            <div className="group-label">功能开关</div>
+            <div className="toggle-row">
+              <span className="toggle-label">自动分析</span>
+              <div className={`toggle${settings.autoAnalyze ? " on" : ""}`} onClick={() => {
+                const next = { ...settings, autoAnalyze: !settings.autoAnalyze };
+                onUpdateSettings(next);
+                window.hearthstoneAgent.saveSettings(next).catch(() => {});
+              }} />
+            </div>
+            <div className="toggle-row">
+              <span className="toggle-label">实时建议</span>
+              <div className={`toggle${settings.liveRecommendationsEnabled ? " on" : ""}`} onClick={() => onUpdateSettings({ ...settings, liveRecommendationsEnabled: !settings.liveRecommendationsEnabled })} />
+            </div>
+            <div className="toggle-row">
+              <span className="toggle-label">多 Agent 对比</span>
+              <div className={`toggle${settings.multiAgentCompareEnabled ? " on" : ""}`} onClick={() => onUpdateSettings({ ...settings, multiAgentCompareEnabled: !settings.multiAgentCompareEnabled })} />
+            </div>
+            <div className="toggle-row">
+              <span className="toggle-label">胜率估算</span>
+              <div className={`toggle${settings.winRateEstimationEnabled ? " on" : ""}`} onClick={() => onUpdateSettings({ ...settings, winRateEstimationEnabled: !settings.winRateEstimationEnabled })} />
+            </div>
+          </div>
+
+          {/* Hotkeys */}
+          <div className="settings-group">
+            <div className="group-label">快捷键</div>
+            <div className="field-row">
+              <label>分析</label>
+              <div className="hotkey-input">
+                <kbd>{settings.hotkeys.analyze.replace("CommandOrControl", "Ctrl")}</kbd>
+              </div>
+            </div>
+            <div className="field-row">
+              <label>切换悬浮栏</label>
+              <div className="hotkey-input">
+                <kbd>{settings.hotkeys.toggleOverlay.replace("CommandOrControl", "Ctrl")}</kbd>
+              </div>
+            </div>
+          </div>
+
+          {/* Save & Test */}
+          <div className="settings-actions" style={{padding:"0 4px",marginTop:4}}>
+            <button className="btn-save" onClick={onSave}>保存设置</button>
+            <button className="btn-test" onClick={() => void window.hearthstoneAgent.testAgentConnection()}>测试连接</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ==================== HELPERS ==================== */
 
 function getActiveAgent(settings: AppSettings): AgentProfile {
-  return (
-    settings.agents.find((agent) => agent.id === settings.activeAgentId) ??
+  return settings.agents.find(a => a.id === settings.activeAgentId) ??
     settings.agents[0] ?? {
-      id: "default",
-      name: "默认 Agent",
-      baseUrl: settings.baseUrl,
-      model: settings.model,
-      transport: settings.transport,
-      timeoutMs: settings.timeoutMs,
-    }
-  );
+      id: "default", name: "默认 Agent",
+      baseUrl: settings.baseUrl, model: settings.model,
+      transport: settings.transport, timeoutMs: settings.timeoutMs,
+    };
 }
 
-function updateAgent(
-  settings: AppSettings,
-  agentId: string,
-  patch: Partial<AgentProfile>,
-): AppSettings {
-  const agents = settings.agents.map((agent) =>
-    agent.id === agentId ? { ...agent, ...patch } : agent,
-  );
-  const activeAgent = agents.find((agent) => agent.id === agentId);
-  return activeAgent
-    ? syncLegacyAgentFields({ ...settings, agents }, activeAgent)
-    : { ...settings, agents };
+function updateAgent(settings: AppSettings, agentId: string, patch: Partial<AgentProfile>): AppSettings {
+  const agents = settings.agents.map(a => a.id === agentId ? { ...a, ...patch } : a);
+  const activeAgent = agents.find(a => a.id === agentId);
+  return activeAgent ? syncLegacyAgentFields({ ...settings, agents }, activeAgent) : { ...settings, agents };
 }
 
-function syncLegacyAgentFields(
-  settings: AppSettings,
-  agent?: AgentProfile,
-): AppSettings {
-  if (!agent) {
-    return settings;
-  }
+function syncLegacyAgentFields(settings: AppSettings, agent?: AgentProfile): AppSettings {
+  if (!agent) return settings;
   return {
     ...settings,
     activeAgentId: agent.id,
@@ -657,73 +736,26 @@ function syncLegacyAgentFields(
   };
 }
 
-function activePlayerLabel(activePlayer: ActivePlayer) {
-  if (activePlayer === "self") {
-    return "己方";
-  }
-  if (activePlayer === "opponent") {
-    return "对手";
-  }
-  return "未知";
-}
-
-function cardDetails(card: CardReference): string {
-  const parts = [`#${card.entityId}`];
-  if (!card.cardId) {
-    parts.push("Power.log 未公开卡牌 ID");
-  }
-  if (card.cardId) {
-    parts.push(card.cardId);
-  }
-  if (card.cost !== undefined) {
-    parts.push(`${card.cost}费`);
-  }
-  if (card.attack !== undefined || card.health !== undefined) {
-    parts.push(`${card.attack ?? "?"}/${card.health ?? "?"}`);
-  }
-  if (card.damage) {
-    parts.push(`受伤${card.damage}`);
-  }
-  const flags = [
-    card.taunt ? "嘲讽" : undefined,
-    card.divineShield ? "圣盾" : undefined,
-    card.poisonous ? "剧毒" : undefined,
-    card.lifesteal ? "吸血" : undefined,
-    card.dormant ? "休眠" : undefined,
-    card.exhausted ? "已行动" : undefined,
-  ].filter(Boolean);
-  return [...parts, ...flags].join(" · ");
-}
-
 function cardTitle(card: CardReference): string {
-  return card.name ?? card.cardId ?? `日志未公开 #${card.entityId}`;
+  return card.name ?? card.cardId ?? `#${card.entityId}`;
 }
 
-function StatusCard({
-  title,
-  ok,
-  detail,
-}: {
-  title: string;
-  ok: boolean;
-  detail: string;
-}) {
-  return (
-    <div className="status-card">
-      <div className="status-title">
-        <span className={ok ? "dot ok" : "dot"} />
-        <strong>{title}</strong>
-      </div>
-      <p>{detail}</p>
-    </div>
-  );
+function cardCost(card: CardReference): number {
+  return card.cost ?? 0;
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <label className="field">
-      <span>{label}</span>
-      {children}
-    </label>
-  );
+function extractAgentLabel(rationale: string): string {
+  const match = rationale.match(/^\[(.+?)\]\s*/);
+  if (match) return `[${match[1]}] ${rationale.slice(match[0].length).slice(0, 30)}`;
+  return rationale.slice(0, 30);
+}
+
+function extractAgentPrefix(rationale: string): string | undefined {
+  const match = rationale.match(/^\[(.+?)\]\s*/);
+  return match?.[1];
+}
+
+function labelForRank(rank: number): string {
+  const map = ["", "Ⅰ", "Ⅱ", "Ⅲ", "Ⅳ", "Ⅴ"];
+  return map[rank] ?? `#${rank}`;
 }

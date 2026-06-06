@@ -19,15 +19,21 @@ type AgentDiagnosticEvent = {
 };
 type AgentDiagnostics = (event: AgentDiagnosticEvent) => void;
 
-const SYSTEM_PROMPT = `你是炉石传说标准构筑对局分析助手。
+function systemPrompt(winRateEstimationEnabled: boolean): string {
+  const winRateLine = winRateEstimationEnabled
+    ? `对每条路线估算 winRateBefore（执行前胜率）和 winRateAfter（执行后胜率），范围 0~1。`
+    : "";
+  return `你是炉石传说对局分析助手。
 你只能使用请求中明确提供的可见信息，不得假设对手手牌、牌库顺序或随机结果。
 你的目标是提供当前回合的高质量候选路线，不得声称路线是数学最优。
 每条路线必须引用请求中存在的实体 ID，并说明理由、主要风险与置信度。
+${winRateLine}
 sourceCardId 必须与 sourceEntityId 对应实体的 cardId 完全一致；end-turn 不得携带来源或目标。
-description 只描述动作本身，例如“打出神圣新星”或“卡多雷女祭司攻击敌方英雄”，不得把法术写成战吼，不得编造卡牌文本外的效果。
-幸运币或其他“本回合获得法力”的牌只能在后续动作会立刻使用这点法力时打出；不得推荐“打出幸运币，然后结束回合”。
+description 只描述动作本身，例如"打出神圣新星"或"卡多雷女祭司攻击敌方英雄"，不得把法术写成战吼，不得编造卡牌文本外的效果。
+幸运币或其他"本回合获得法力"的牌只能在后续动作会立刻使用这点法力时打出；不得推荐"打出幸运币，然后结束回合"。
 如果某条路线无法满足实体、费用、攻击、目标和场面容量约束，就不要返回这条路线。
 只返回一个 JSON 对象，不要 Markdown，不要代码块，不要解释性前后缀。`;
+}
 
 const ANALYSIS_RESULT_SCHEMA = {
   type: "object",
@@ -48,6 +54,8 @@ const ANALYSIS_RESULT_SCHEMA = {
           rationale: { type: "string" },
           risks: { type: "array", items: { type: "string" } },
           confidence: { type: "number", minimum: 0, maximum: 1 },
+          winRateBefore: { type: "number", minimum: 0, maximum: 1 },
+          winRateAfter: { type: "number", minimum: 0, maximum: 1 },
           actions: {
             type: "array",
             items: {
@@ -103,7 +111,7 @@ export class AgentClient {
   constructor(
     private readonly settings: Pick<
       AppSettings,
-      "baseUrl" | "model" | "transport" | "timeoutMs"
+      "baseUrl" | "model" | "transport" | "timeoutMs" | "winRateEstimationEnabled"
     >,
     private readonly apiKey: string,
     private readonly catalog: CardCatalog,
@@ -269,6 +277,7 @@ export class AgentClient {
           ? "/v1/responses"
           : "/v1/chat/completions";
       const startedAt = Date.now();
+      const winRateEnabled = this.settings.winRateEstimationEnabled ?? false;
       const body =
         this.settings.transport === "responses"
           ? responsesPayload(
@@ -276,6 +285,7 @@ export class AgentClient {
               request,
               repairErrors,
               this.catalog,
+              winRateEnabled,
             )
           : chatCompletionsPayload(
               this.settings.model,
@@ -283,6 +293,7 @@ export class AgentClient {
               repairErrors,
               this.catalog,
               "json_object",
+              winRateEnabled,
             );
       this.emitDiagnostic("agent.analysis.request_payload", {
         transport: this.settings.transport,
@@ -474,10 +485,11 @@ function responsesPayload(
   request: AnalysisRequest,
   repairErrors: string[],
   catalog: CardCatalog,
+  winRateEnabled: boolean = false,
 ): object {
   return {
     model,
-    instructions: SYSTEM_PROMPT,
+    instructions: systemPrompt(winRateEnabled),
     input: buildUserContent(request, repairErrors, catalog),
     text: {
       format: {
@@ -496,6 +508,7 @@ function chatCompletionsPayload(
   repairErrors: string[],
   catalog: CardCatalog,
   mode: StructuredOutputMode = "json_schema",
+  winRateEnabled: boolean = false,
 ): object {
   return {
     model,
@@ -503,7 +516,7 @@ function chatCompletionsPayload(
     max_tokens: 2_000,
     stream: false,
     messages: [
-      { role: "system", content: SYSTEM_PROMPT },
+      { role: "system", content: systemPrompt(winRateEnabled) },
       { role: "user", content: buildUserContent(request, repairErrors, catalog, mode) },
     ],
     response_format:

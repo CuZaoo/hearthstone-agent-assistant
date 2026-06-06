@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>方案E - 炉石主题沉浸式</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,600;1,600;1,700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(201,160,74,.12); border-radius: 999px; }
+
+body {
+  font-family: 'Inter', 'Microsoft YaHei UI', sans-serif;
+  background: #0c0a08;
+  color: #e6ddd0;
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 20px;
+  background-image:
+    radial-gradient(ellipse at 50% 0, rgba(139,100,50,.08), transparent 50%),
+    radial-gradient(ellipse at 80% 100%, rgba(139,100,50,.04), transparent 40%),
+    repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(139,100,50,.015) 2px, rgba(139,100,50,.015) 4px);
+}
+
+/* Ornamental divider */
+.orn {
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(201,160,74,.25), rgba(201,160,74,.4), rgba(201,160,74,.25), transparent);
+  margin: 0;
+}
+
+/* ===== DASHBOARD ===== */
+.dashboard {
+  width: 960px;
+  height: 700px;
+  background: linear-gradient(180deg, #12100e 0%, #0f0d0a 100%);
+  border: 1px solid rgba(201,160,74,.12);
+  border-radius: 20px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  position: relative;
+  box-shadow:
+    0 24px 80px rgba(0,0,0,.6),
+    inset 0 1px 0 rgba(201,160,74,.06);
+}
+
+/* Header: Tavern sign */
+.tavern-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 24px;
+  background:
+    linear-gradient(180deg, rgba(201,160,74,.06), transparent);
+  border-bottom: 1px solid rgba(201,160,74,.08);
+  position: relative;
+}
+.tavern-header::after {
+  content: '';
+  position: absolute;
+  bottom: -1px;
+  left: 40px;
+  right: 40px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(201,160,74,.1), transparent);
+}
+.tavern-header .logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.tavern-header .logo .shield {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #c9a04a, #8a6d2e);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  color: #12100e;
+  font-weight: 700;
+  transform: rotate(45deg);
+}
+.tavern-header .logo .shield span { transform: rotate(-45deg); }
+.tavern-header .logo .text {
+  font-family: 'Playfair Display', serif;
+  font-style: italic;
+  font-size: 17px;
+  color: #f0d49a;
+  letter-spacing: .02em;
+}
+.tavern-header .logo .text small {
+  display: block;
+  font-family: 'Inter', sans-serif;
+  font-style: normal;
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: .12em;
+  color: #8a7a66;
+  font-weight: 500;
+}
+.tavern-header .right { display: flex; align-items: center; gap: 10px; }
+.tavern-header .right .guide-btn {
+  font-family: 'Inter', sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 5px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(201,160,74,.15);
+  background: rgba(201,160,74,.08);
+  color: #f0d49a;
+  cursor: pointer;
+  transition: all .2s;
+}
+.tavern-header .right .guide-btn:hover { background: rgba(201,160,74,.15); }
+.tavern-header .right .candle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: #b8a890;
+  font-weight: 500;
+}
+.tavern-header .right .candle .flame {
+  width: 8px; height: 8px;
+  background: radial-gradient(#fbbf24, #ea580c);
+  border-radius: 50%;
+  box-shadow: 0 0 6px rgba(251,191,36,.4);
+  animation: flicker 2s infinite;
+}
+@keyframes flicker {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: .7; transform: scale(.9); }
+}
+
+/* Status bar: Dossier */
+.dossier {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  padding: 8px 24px;
+  border-bottom: 1px solid rgba(201,160,74,.04);
+  font-size: 11px;
+  color: #8a7a66;
+}
+.dossier .item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 14px;
+  border-right: 1px solid rgba(201,160,74,.06);
+}
+.dossier .item:last-child { border-right: none; }
+.dossier .item .val { color: #f0d49a; font-weight: 600; }
+.dossier .item .dot-green {
+  width: 5px; height: 5px; border-radius: 50%;
+  background: #68c18a;
+  box-shadow: 0 0 4px rgba(104,193,138,.3);
+}
+
+/* Content: Two columns */
+.two-col {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+}
+
+/* Battlefield column */
+.battlefield {
+  width: 58%;
+  padding: 16px 20px;
+  border-right: 1px solid rgba(201,160,74,.06);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.zone {
+  background: rgba(201,160,74,.03);
+  border: 1px solid rgba(201,160,74,.06);
+  border-radius: 12px;
+  padding: 12px;
+}
+.zone .zone-title {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .1em;
+  color: #8a7a66;
+  margin-bottom: 8px;
+  display: flex;
+  justify-content: space-between;
+}
+.zone .zone-title .count { color: #f0d49a; font-weight: 600; }
+.zone-cards {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 4px;
+}
+.zone-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 10px;
+  background: rgba(201,160,74,.04);
+  border: 1px solid rgba(201,160,74,.06);
+  border-radius: 6px;
+  font-size: 12px;
+  color: #e6ddd0;
+  transition: all .15s;
+}
+.zone-card:hover { border-color: rgba(201,160,74,.15); background: rgba(201,160,74,.06); }
+.zone-card .cost-badge {
+  background: rgba(79,195,232,.12);
+  color: #4fc3e8;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 600;
+}
+.zone-card .stats {
+  font-size: 10px;
+  color: #8a7a66;
+}
+
+/* Advisor column */
+.advisor {
+  flex: 1;
+  padding: 16px 20px;
+  overflow-y: auto;
+  background:
+    radial-gradient(ellipse at 50% 0, rgba(201,160,74,.03), transparent 60%);
+}
+
+.advisor .scroll-title {
+  font-family: 'Playfair Display', serif;
+  font-style: italic;
+  font-size: 15px;
+  color: #f0d49a;
+  margin-bottom: 4px;
+  text-align: center;
+}
+.advisor .scroll-sub {
+  text-align: center;
+  font-size: 10px;
+  color: #8a7a66;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  margin-bottom: 14px;
+}
+
+.vote-card {
+  padding: 14px;
+  margin-bottom: 10px;
+  background: rgba(201,160,74,.04);
+  border: 1px solid rgba(201,160,74,.08);
+  border-radius: 12px;
+  position: relative;
+  overflow: hidden;
+}
+.vote-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 3px;
+  height: 100%;
+  background: linear-gradient(180deg, #c9a04a, transparent);
+  border-radius: 3px 0 0 3px;
+}
+.vote-card .vc-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+.vote-card .vc-head .vc-title {
+  font-weight: 700;
+  font-size: 13px;
+  color: #f0d49a;
+}
+.vote-card .vc-head .vc-conf {
+  font-size: 12px;
+  font-weight: 700;
+  color: #68c18a;
+  font-family: 'Playfair Display', serif;
+  font-style: italic;
+}
+.vote-card .vc-actions {
+  font-size: 12px;
+  color: #b8a890;
+  line-height: 1.7;
+}
+.vote-card .vc-foot {
+  margin-top: 6px;
+  font-size: 10px;
+  color: #8a7a66;
+  font-style: italic;
+}
+
+/* ===== OVERLAY: Tavern Sign ===== */
+.overlay-tavern {
+  width: 960px;
+  background: linear-gradient(135deg, rgba(18,16,14,.97), rgba(15,13,10,.97));
+  border: 1px solid rgba(201,160,74,.2);
+  border-radius: 14px;
+  padding: 10px 18px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  box-shadow: 0 8px 32px rgba(0,0,0,.5), inset 0 1px 0 rgba(201,160,74,.06);
+}
+.overlay-tavern .sign-icon {
+  font-size: 20px;
+  flex-shrink: 0;
+}
+.overlay-tavern .sign-body {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  overflow: hidden;
+}
+.overlay-tavern .sign-body .entry {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: #b8a890;
+  white-space: nowrap;
+}
+.overlay-tavern .sign-body .entry .rank-badge {
+  font-family: 'Playfair Display', serif;
+  font-style: italic;
+  color: #f0d49a;
+  font-weight: 700;
+}
+.overlay-tavern .sign-body .entry .pct {
+  color: #68c18a;
+  font-weight: 600;
+  font-size: 11px;
+}
+.overlay-tavern .sign-divider { width: 1px; height: 20px; background: rgba(201,160,74,.1); flex-shrink: 0; }
+.overlay-tavern .sign-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.overlay-tavern .sign-actions button {
+  font-family: 'Inter', sans-serif;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 5px 14px;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
+  transition: all .15s;
+}
+.overlay-tavern .sign-actions .btn-gold {
+  background: linear-gradient(135deg, #c9a04a, #a8832e);
+  color: #12100e;
+}
+.overlay-tavern .sign-actions .btn-gold:hover { box-shadow: 0 2px 12px rgba(201,160,74,.3); }
+.overlay-tavern .sign-actions .btn-dim {
+  background: rgba(201,160,74,.08);
+  color: #b8a890;
+  border: 1px solid rgba(201,160,74,.1);
+}
+</style>
+</head>
+<body>
+
+<div style="display:flex;flex-direction:column;align-items:center;gap:16px;">
+
+<!-- DASHBOARD -->
+<div class="dashboard">
+  <div class="tavern-header">
+    <div class="logo">
+      <div class="shield"><span>🛡</span></div>
+      <div class="text">
+        旅店老板的参谋
+        <small>炉石对局分析助手</small>
+      </div>
+    </div>
+    <div class="right">
+      <button class="guide-btn">📖 旅店指南</button>
+      <div class="candle">
+        <span class="flame"></span>
+        <span>待命中</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="dossier">
+    <span class="item"><span class="dot-green"></span> <span class="val">Power.log</span> 已连接</span>
+    <span class="item">📜 卡牌 <span class="val">586</span></span>
+    <span class="item">⚔️ 回合 <span class="val">6</span></span>
+    <span class="item">🔍 视觉校验 <span class="val">8/8</span></span>
+    <span class="item" style="margin-left:auto;">⏱ 4.2s</span>
+  </div>
+
+  <div class="two-col">
+    <!-- Battlefield -->
+    <div class="battlefield">
+      <div class="zone">
+        <div class="zone-title">✋ 手牌 <span class="count">5</span></div>
+        <div class="zone-cards">
+          <div class="zone-card"><span>🔥 火球术 <span class="cost-badge">4费</span></span><span class="stats">造成 6 点伤害</span></div>
+          <div class="zone-card"><span>❄️ 寒冰箭 <span class="cost-badge">2费</span></span><span class="stats">造成 3 点伤害</span></div>
+          <div class="zone-card"><span>💧 水元素 <span class="cost-badge">6费</span></span><span class="stats">3/6</span></div>
+          <div class="zone-card"><span>📖 奥术智慧 <span class="cost-badge">3费</span></span><span class="stats">抽 2 张牌</span></div>
+          <div class="zone-card"><span>🪙 幸运币 <span class="cost-badge">0费</span></span><span class="stats">获得 1 个临时法力</span></div>
+        </div>
+      </div>
+
+      <div class="zone">
+        <div class="zone-title">🛡 己方战场 <span class="count">3</span></div>
+        <div class="zone-cards">
+          <div class="zone-card"><span>💧 水元素</span><span class="stats">4/4 · #9</span></div>
+          <div class="zone-card"><span>⚔️ 民兵指挥官</span><span class="stats">4/3 · #10</span></div>
+          <div class="zone-card"><span>🛡 护甲锻造师</span><span class="stats">1/3 · #11</span></div>
+        </div>
+      </div>
+
+      <div class="zone">
+        <div class="zone-title">👹 对手战场 <span class="count">2</span></div>
+        <div class="zone-cards">
+          <div class="zone-card"><span>👹 恶魔卫士 <span style="color:#f0d49a;">[嘲讽]</span></span><span class="stats">3/3 · #14</span></div>
+          <div class="zone-card"><span>🔥 烈焰小鬼</span><span class="stats">3/2 · #15</span></div>
+        </div>
+      </div>
+
+      <div style="display:flex;gap:8px;margin-top:4px;">
+        <button style="flex:1;background:linear-gradient(135deg,#c9a04a,#a8832e);border:none;color:#12100e;font-weight:700;font-size:13px;padding:10px;border-radius:8px;cursor:pointer;">⚔️ 召集参谋</button>
+        <button style="background:rgba(201,160,74,.06);border:1px solid rgba(201,160,74,.1);color:#b8a890;padding:10px 16px;border-radius:8px;font-size:12px;cursor:pointer;">停止</button>
+      </div>
+    </div>
+
+    <!-- Advisor -->
+    <div class="advisor">
+      <div class="scroll-title">~ 谋略卷轴 ~</div>
+      <div class="scroll-sub">参谋分析 · 默认 Agent</div>
+
+      <div class="vote-card">
+        <div class="vc-head">
+          <span class="vc-title">Ⅰ. 抢血压制</span>
+          <span class="vc-conf">80%</span>
+        </div>
+        <div class="vc-actions">
+          ⚔️ 水元素 → 敌方英雄<br>
+          🏹 寒冰箭 → 敌方英雄<br>
+          🏁 结束回合
+        </div>
+        <div class="vc-foot">利用场面优势打脸，下回合火球术斩杀</div>
+      </div>
+
+      <div class="vote-card" style="opacity:.8;">
+        <div class="vc-head">
+          <span class="vc-title">Ⅱ. 控场解场</span>
+          <span class="vc-conf" style="color:#e4b889;">65%</span>
+        </div>
+        <div class="vc-actions">
+          🏹 寒冰箭 → 恶魔卫士<br>
+          ⚔️ 水元素 → 恶魔卫士<br>
+          🏁 结束回合
+        </div>
+        <div class="vc-foot">解掉嘲讽，保护己方随从</div>
+      </div>
+
+      <div style="margin-top:16px;padding-top:12px;border-top:1px solid rgba(201,160,74,.06);">
+        <div style="display:flex;justify-content:space-between;font-size:10px;color:#8a7a66;text-transform:uppercase;letter-spacing:.06em;">
+          <span>⚡ 5/7 · 🖐 5 · 🛡 3</span>
+          <span>📜 12 卷历史</span>
+        </div>
+        <div style="margin-top:8px;display:flex;gap:6px;">
+          <button style="flex:1;background:rgba(201,160,74,.06);border:1px solid rgba(201,160,74,.08);color:#b8a890;padding:6px;border-radius:6px;font-size:10px;cursor:pointer;">⚙️ 设置</button>
+          <button style="flex:1;background:rgba(201,160,74,.06);border:1px solid rgba(201,160,74,.08);color:#b8a890;padding:6px;border-radius:6px;font-size:10px;cursor:pointer;">📋 历史</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- OVERLAY: Tavern Sign Bar -->
+<div class="overlay-tavern">
+  <div class="sign-icon">🍺</div>
+  <div class="sign-body">
+    <div class="entry">
+      <span class="rank-badge">I</span> 水元素 → 英雄
+      <span class="pct">80%</span>
+    </div>
+    <div class="sign-divider"></div>
+    <div class="entry">
+      <span class="rank-badge">II</span> 寒冰箭 → 恶魔卫士
+      <span class="pct">65%</span>
+    </div>
+    <div class="sign-divider"></div>
+    <div class="entry">
+      <span class="rank-badge">III</span> 奥术智慧
+      <span class="pct" style="color:#e4b889;">45%</span>
+    </div>
+  </div>
+  <div class="sign-divider"></div>
+  <div class="sign-actions">
+    <span style="font-size:10px;color:#8a7a66;">⚡5/7</span>
+    <button class="btn-gold">分析</button>
+    <button class="btn-dim">×</button>
+  </div>
+</div>
+
+</div>
+
+</body>
+</html>

@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>方案A - 侧栏导航</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:ital,wght@0,600;1,600&display=swap" rel="stylesheet">
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+::-webkit-scrollbar { width: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,.07); border-radius: 999px; }
+
+body {
+  font-family: 'DM Sans', 'Microsoft YaHei UI', sans-serif;
+  background: #07080c;
+  color: #f0e6d3;
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 24px;
+  background-image:
+    radial-gradient(ellipse at 80% 10%, rgba(79,195,232,.07), transparent 50%),
+    radial-gradient(ellipse at 20% 15%, rgba(201,160,74,.05), transparent 45%);
+}
+
+/* ===== MAIN DASHBOARD ===== */
+.dashboard {
+  width: 980px;
+  height: 700px;
+  background: rgba(14,16,24,.94);
+  border: 1px solid rgba(201,160,74,.15);
+  border-radius: 20px;
+  display: flex;
+  overflow: hidden;
+  position: relative;
+  box-shadow: 0 24px 80px rgba(0,0,0,.5);
+}
+
+/* Sidebar */
+.sidebar {
+  width: 180px;
+  background: rgba(0,0,0,.3);
+  border-right: 1px solid rgba(255,255,255,.05);
+  padding: 20px 0;
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+}
+.sidebar-logo {
+  padding: 0 18px 16px;
+  border-bottom: 1px solid rgba(255,255,255,.06);
+  margin-bottom: 12px;
+}
+.sidebar-logo h1 {
+  font-family: 'Playfair Display', serif;
+  font-size: 16px;
+  font-style: italic;
+  color: #f0d49a;
+  letter-spacing: .02em;
+  line-height: 1.3;
+}
+.sidebar-logo small {
+  font-size: 10px;
+  color: #7a8599;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+}
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 18px;
+  color: #7a8599;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all .2s;
+  border-left: 2px solid transparent;
+}
+.nav-item:hover { color: #bcc4d4; background: rgba(255,255,255,.03); }
+.nav-item.active {
+  color: #f0d49a;
+  border-left-color: #c9a04a;
+  background: linear-gradient(90deg, rgba(201,160,74,.08), transparent);
+}
+.nav-item .icon { font-size: 16px; width: 20px; text-align: center; }
+.sidebar-spacer { flex: 1; }
+.sidebar-footer {
+  padding: 12px 18px;
+  border-top: 1px solid rgba(255,255,255,.05);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: #7a8599;
+}
+.sidebar-footer .dot { width: 6px; height: 6px; border-radius: 50%; background: #68c18a; flex-shrink: 0; }
+
+/* Main content */
+.main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Top bar */
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 22px;
+  border-bottom: 1px solid rgba(255,255,255,.06);
+  background: rgba(0,0,0,.15);
+}
+.topbar-left { display: flex; align-items: center; gap: 12px; }
+.topbar-left .status-dots { display: flex; gap: 6px; }
+.status-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  box-shadow: 0 0 6px var(--glow);
+}
+.status-dot.ok { --glow: rgba(104,193,138,.4); background: #68c18a; }
+.topbar-right { display: flex; align-items: center; gap: 10px; }
+.topbar-right .btn-guide {
+  background: rgba(201,160,74,.12);
+  border: 1px solid rgba(201,160,74,.2);
+  color: #f0d49a;
+  padding: 5px 14px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all .2s;
+}
+.topbar-right .btn-guide:hover { background: rgba(201,160,74,.2); }
+.topbar-right .badge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: rgba(104,193,138,.15);
+  color: #9be6b9;
+  border: 1px solid rgba(104,193,138,.2);
+}
+
+/* Content area */
+.content {
+  flex: 1;
+  padding: 18px 22px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* Mini status bar */
+.mini-status {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.mini-status-item {
+  font-size: 11px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  background: rgba(255,255,255,.04);
+  color: #bcc4d4;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.mini-status-item .indicator { width: 5px; height: 5px; border-radius: 50%; }
+.indicator.green { background: #68c18a; }
+.indicator.yellow { background: #e4b889; }
+
+/* Snapshot section */
+.section-label {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  color: #7a8599;
+  margin-bottom: 10px;
+}
+.snapshot-row {
+  display: flex;
+  gap: 14px;
+}
+.snapshot-col {
+  flex: 1;
+  background: rgba(255,255,255,.025);
+  border: 1px solid rgba(255,255,255,.06);
+  border-radius: 12px;
+  padding: 12px;
+}
+.snapshot-col h3 {
+  font-size: 12px;
+  font-weight: 600;
+  color: #7a8599;
+  margin-bottom: 8px;
+  display: flex;
+  justify-content: space-between;
+}
+.snapshot-col h3 span { color: #f0d49a; }
+.card-mini {
+  font-size: 11px;
+  padding: 6px 8px;
+  background: rgba(201,160,74,.08);
+  border: 1px solid rgba(201,160,74,.12);
+  border-radius: 6px;
+  margin-bottom: 4px;
+  display: flex;
+  justify-content: space-between;
+  color: #f0e6d3;
+}
+.card-mini .cost { color: #4fc3e8; font-weight: 600; }
+
+/* Action bar */
+.action-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  background: rgba(201,160,74,.06);
+  border: 1px solid rgba(201,160,74,.12);
+  border-radius: 12px;
+}
+.action-bar .btn-primary {
+  background: linear-gradient(135deg, #c9a04a, #a8832e);
+  border: none;
+  color: #07080c;
+  font-weight: 700;
+  font-size: 13px;
+  padding: 8px 20px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all .2s;
+}
+.action-bar .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 4px 16px rgba(201,160,74,.3); }
+.action-bar .btn-primary:active { transform: translateY(0); }
+.action-bar .btn-secondary {
+  background: transparent;
+  border: 1px solid rgba(255,255,255,.12);
+  color: #bcc4d4;
+  padding: 7px 16px;
+  border-radius: 8px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all .2s;
+}
+.action-bar .btn-secondary:hover { border-color: rgba(255,255,255,.25); }
+.action-bar .timer {
+  margin-left: auto;
+  font-size: 12px;
+  color: #7a8599;
+  font-weight: 500;
+}
+
+/* Candidates */
+.candidates { display: flex; flex-direction: column; gap: 8px; }
+.candidate-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 14px 16px;
+  background: rgba(24,27,36,.6);
+  border: 1px solid rgba(201,160,74,.12);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all .2s;
+}
+.candidate-card:hover { border-color: rgba(201,160,74,.3); background: rgba(24,27,36,.85); }
+.candidate-rank {
+  font-family: 'Playfair Display', serif;
+  font-style: italic;
+  font-size: 20px;
+  color: #c9a04a;
+  width: 36px;
+  flex-shrink: 0;
+  text-align: center;
+  padding-top: 2px;
+}
+.candidate-body { flex: 1; }
+.candidate-body .title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.candidate-body .title strong { font-size: 14px; color: #f0d49a; }
+.candidate-body .title .conf {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(104,193,138,.15);
+  color: #9be6b9;
+}
+.candidate-body .actions {
+  font-size: 12px;
+  color: #bcc4d4;
+  line-height: 1.6;
+}
+.candidate-body .rationale {
+  font-size: 11px;
+  color: #7a8599;
+  margin-top: 4px;
+}
+.candidate-expand {
+  color: #7a8599;
+  font-size: 14px;
+  padding: 4px;
+}
+
+/* Overlay preview */
+.overlay-preview {
+  width: 420px;
+  height: 700px;
+  flex-shrink: 0;
+  margin-left: 20px;
+  border-radius: 20px;
+  overflow: hidden;
+  box-shadow: 0 24px 80px rgba(0,0,0,.5);
+}
+</style>
+</head>
+<body>
+
+<div style="display:flex;align-items:stretch;gap:20px;">
+
+<!-- MAIN DASHBOARD -->
+<div class="dashboard">
+  <!-- Sidebar -->
+  <nav class="sidebar">
+    <div class="sidebar-logo">
+      <h1>炉石对局<br>Agent 助手</h1>
+      <small>v0.1.0 · 只读分析</small>
+    </div>
+    <div class="nav-item active"><span class="icon">🎴</span> 局面</div>
+    <div class="nav-item"><span class="icon">🎯</span> 建议</div>
+    <div class="nav-item"><span class="icon">⚙️</span> 设置</div>
+    <div class="nav-item"><span class="icon">📋</span> 历史</div>
+    <div class="sidebar-spacer"></div>
+    <div class="sidebar-footer">
+      <span class="dot"></span>
+      <span>所有服务正常</span>
+    </div>
+  </nav>
+
+  <!-- Main -->
+  <div class="main">
+    <div class="topbar">
+      <div class="topbar-left">
+        <div class="status-dots">
+          <span class="status-dot ok"></span>
+          <span class="status-dot ok"></span>
+          <span class="status-dot ok"></span>
+          <span class="status-dot ok"></span>
+        </div>
+        <span style="font-size:12px;color:#7a8599;font-weight:500;">全部正常</span>
+      </div>
+      <div class="topbar-right">
+        <button class="btn-guide">📖 新手引导</button>
+        <span class="badge">待命</span>
+      </div>
+    </div>
+
+    <div class="content">
+      <!-- Mini Status -->
+      <div class="mini-status">
+        <span class="mini-status-item"><span class="indicator green"></span> Power.log 已连接</span>
+        <span class="mini-status-item"><span class="indicator green"></span> 卡牌快照 586张</span>
+        <span class="mini-status-item"><span class="indicator green"></span> 局面 回合6</span>
+        <span class="mini-status-item"><span class="indicator green"></span> 视觉校验 8实体匹配</span>
+      </div>
+
+      <!-- Snapshot Section -->
+      <div>
+        <div class="section-label">局面总览</div>
+        <div class="snapshot-row">
+          <div class="snapshot-col">
+            <h3>己方手牌 <span>5</span></h3>
+            <div class="card-mini"><span>🔥 火球术</span><span class="cost">4费</span></div>
+            <div class="card-mini"><span>❄️ 寒冰箭</span><span class="cost">2费</span></div>
+            <div class="card-mini"><span>💧 水元素</span><span class="cost">6费</span></div>
+            <div class="card-mini"><span>🛡 奥术智慧</span><span class="cost">3费</span></div>
+            <div class="card-mini"><span>🪙 幸运币</span><span class="cost">0费</span></div>
+          </div>
+          <div class="snapshot-col">
+            <h3>己方场面 <span>3</span></h3>
+            <div class="card-mini"><span>💧 水元素 4/4</span><span>#9</span></div>
+            <div class="card-mini"><span>⚔️ 民兵指挥官 4/3</span><span>#10</span></div>
+            <div class="card-mini"><span>🛡 护甲锻造师 1/3</span><span>#11</span></div>
+          </div>
+          <div class="snapshot-col">
+            <h3>对手场面 <span>2</span></h3>
+            <div class="card-mini"><span>👹 恶魔卫士 3/3</span><span>嘲讽</span></div>
+            <div class="card-mini"><span>🔥 烈焰小鬼 3/2</span><span>#15</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Action Bar -->
+      <div class="action-bar">
+        <button class="btn-primary">⚡ 分析当前局面</button>
+        <button class="btn-secondary">停止</button>
+        <span class="timer">⏱ 上一轮 4.2s</span>
+      </div>
+
+      <!-- Candidates -->
+      <div>
+        <div class="section-label">候选路线</div>
+        <div class="candidates">
+          <div class="candidate-card">
+            <div class="candidate-rank">01</div>
+            <div class="candidate-body">
+              <div class="title">
+                <strong>抢血压制</strong>
+                <span class="conf">80%</span>
+              </div>
+              <div class="actions">
+                1. 水元素(4费) → 攻击敌方英雄<br>
+                2. 寒冰箭(2费) → 敌方英雄<br>
+                3. 结束回合
+              </div>
+              <div class="rationale">利用场面优势打脸，下回合火球术斩杀线</div>
+            </div>
+            <div class="candidate-expand">▸</div>
+          </div>
+          <div class="candidate-card">
+            <div class="candidate-rank">02</div>
+            <div class="candidate-body">
+              <div class="title">
+                <strong>控场解场</strong>
+                <span class="conf" style="background:rgba(228,184,137,.15);color:#e4b889;">65%</span>
+              </div>
+              <div class="actions">
+                1. 寒冰箭(2费) → 恶魔卫士<br>
+                2. 水元素(4费) → 攻击恶魔卫士<br>
+                3. 结束回合
+              </div>
+              <div class="rationale">解掉嘲讽和下个威胁，保护己方场面</div>
+            </div>
+            <div class="candidate-expand">▸</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- OVERLAY PREVIEW -->
+<div class="overlay-preview" style="background:rgba(10,12,18,.95);border:1px solid rgba(201,160,74,.35);border-radius:20px;padding:0;display:flex;flex-direction:column;box-shadow:0 24px 80px rgba(0,0,0,.5);">
+  <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 18px;border-bottom:1px solid rgba(255,255,255,.08);-webkit-app-region:drag;">
+    <span style="color:#f0d49a;font-weight:600;font-size:14px;">🎯 Agent 建议</span>
+    <div style="display:flex;align-items:center;gap:8px;">
+      <select style="max-width:110px;border:1px solid rgba(79,195,232,.28);border-radius:999px;padding:4px 8px;color:#f0e6d3;background:rgba(9,13,20,.82);font-size:11px;outline:none;">
+        <option>默认 Agent</option>
+        <option>DeepSeek</option>
+      </select>
+      <button style="background:linear-gradient(135deg,#c9a04a,#a8832e);border:none;color:#07080c;font-weight:700;font-size:11px;padding:4px 12px;border-radius:6px;cursor:pointer;">分析</button>
+    </div>
+  </div>
+  <div style="flex:1;overflow-y:auto;padding:14px 18px;">
+    <p style="color:#f0d49a;font-size:13px;line-height:1.5;margin-bottom:14px;">利用场面优势压制对手血量，下回合进入斩杀线。</p>
+    <div style="padding:12px 14px;border:1px solid rgba(201,160,74,.16);border-radius:10px;background:rgba(24,27,36,.7);margin-bottom:10px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+        <strong style="font-size:13px;color:#f0d49a;">路线 1</strong>
+        <span style="font-size:11px;font-weight:600;color:#9be6b9;">80%</span>
+      </div>
+      <div style="font-size:12px;color:#bcc4d4;line-height:1.7;padding-left:4px;">
+        1. 水元素 → 攻击敌方英雄<br>
+        2. 寒冰箭 → 敌方英雄<br>
+        3. 结束回合
+      </div>
+      <p style="font-size:11px;color:#7a8599;margin-top:6px;">抢血路线，下回合火球术斩杀</p>
+    </div>
+    <div style="padding:12px 14px;border:1px solid rgba(201,160,74,.12);border-radius:10px;background:rgba(24,27,36,.5);margin-bottom:10px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+        <strong style="font-size:13px;color:#f0d49a;">路线 2</strong>
+        <span style="font-size:11px;font-weight:600;color:#e4b889;">65%</span>
+      </div>
+      <div style="font-size:12px;color:#bcc4d4;line-height:1.7;padding-left:4px;">
+        1. 寒冰箭 → 恶魔卫士<br>
+        2. 水元素 → 恶魔卫士<br>
+        3. 结束回合
+      </div>
+      <p style="font-size:11px;color:#7a8599;margin-top:6px;">解光场面，稳扎稳打</p>
+    </div>
+    <div style="margin-top:12px;border-top:1px solid rgba(255,255,255,.06);padding-top:10px;">
+      <div style="display:flex;justify-content:space-between;color:#7a8599;font-size:10px;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;">
+        <span>历史推荐</span><span>12</span>
+      </div>
+      <div style="padding:8px 10px;border:1px solid transparent;border-radius:8px;background:rgba(255,255,255,.025);margin-bottom:4px;cursor:pointer;">
+        <div style="display:flex;justify-content:space-between;font-size:11px;">
+          <span style="color:#bcc4d4;">赢一手水元素</span>
+          <span style="color:#7a8599;">16:22</span>
+        </div>
+      </div>
+      <div style="padding:8px 10px;border:1px solid transparent;border-radius:8px;background:rgba(255,255,255,.025);cursor:pointer;">
+        <div style="display:flex;justify-content:space-between;font-size:11px;">
+          <span style="color:#bcc4d4;">冰系控场</span>
+          <span style="color:#7a8599;">16:18</span>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div style="padding:10px 18px;border-top:1px solid rgba(255,255,255,.06);font-size:10px;color:#7a8599;display:flex;justify-content:space-between;">
+    <span>⚡ 5/7  🖐 5  🛡 3</span>
+    <span>Ctrl+Shift+A 分析</span>
+  </div>
+</div>
+
+</div>
+
+</body>
+</html>
