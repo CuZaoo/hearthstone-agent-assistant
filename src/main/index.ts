@@ -57,8 +57,12 @@ let visualValidation: VisualValidationReport | undefined;
 let busy = false;
 let statusMessage: string | undefined;
 let lastAutoAnalyzedRevision: string | undefined;
+let pendingAutoAnalyzeTimer: NodeJS.Timeout | undefined;
+let pendingAutoAnalyzeRevision: string | undefined;
 let lastAgentRequestBody: unknown | undefined;
 let analysisAbortController: AbortController | undefined;
+
+const AUTO_ANALYZE_STABLE_MS = 1_200;
 
 const IPC = {
   getStatus: "app:get-status",
@@ -110,6 +114,9 @@ app.on("will-quit", () => {
   watcher?.stop();
   if (logDiscoveryTimer) {
     clearInterval(logDiscoveryTimer);
+  }
+  if (pendingAutoAnalyzeTimer) {
+    clearTimeout(pendingAutoAnalyzeTimer);
   }
   globalShortcut.unregisterAll();
   historyDatabase?.close();
@@ -170,7 +177,7 @@ function createWindows(): void {
 }
 
 function registerShortcuts(): void {
-  globalShortcut.register("CommandOrControl+Shift+A", () => void analyzeCurrentState());
+  globalShortcut.register("CommandOrControl+Shift+A", () => void analyzeCurrentState("manual"));
   globalShortcut.register("CommandOrControl+Shift+O", () => toggleOverlay());
 }
 
@@ -190,7 +197,7 @@ function registerIpc(): void {
     broadcastStatus();
     return getStatus();
   });
-  ipcMain.handle(IPC.analyze, () => analyzeCurrentState());
+  ipcMain.handle(IPC.analyze, () => analyzeCurrentState("manual"));
   ipcMain.handle(IPC.testAgentConnection, () => testAgentConnection());
   ipcMain.handle(IPC.toggleOverlay, () => toggleOverlay());
   ipcMain.handle(IPC.setApiKey, async (_event, apiKey: string, agentId?: string) => {
@@ -252,17 +259,7 @@ async function refreshWatcher(): Promise<void> {
     currentSnapshot = next;
     historyDatabase.saveSnapshot(next);
     broadcastStatus();
-    if (
-      settings.autoAnalyze &&
-      next.activePlayer === "self" &&
-      next.revision !== lastAutoAnalyzedRevision &&
-      !busy &&
-      settings.liveRecommendationsEnabled &&
-      settings.liveRecommendationsRiskAcceptedAt
-    ) {
-      lastAutoAnalyzedRevision = next.revision;
-      void analyzeCurrentState();
-    }
+    scheduleAutoAnalyze(next);
   });
   watcher.on("error", (error) => {
     logStatus = {
@@ -340,9 +337,52 @@ async function testAgentConnection(): Promise<AppStatus> {
   return getStatus();
 }
 
-async function analyzeCurrentState(): Promise<AppStatus> {
+function scheduleAutoAnalyze(snapshot: GameStateSnapshot | undefined): void {
+  if (pendingAutoAnalyzeTimer) {
+    clearTimeout(pendingAutoAnalyzeTimer);
+    pendingAutoAnalyzeTimer = undefined;
+  }
+  if (!snapshot || !shouldAutoAnalyzeSnapshot(snapshot)) {
+    pendingAutoAnalyzeRevision = undefined;
+    return;
+  }
+
+  pendingAutoAnalyzeRevision = snapshot.revision;
+  pendingAutoAnalyzeTimer = setTimeout(() => {
+    pendingAutoAnalyzeTimer = undefined;
+    const latest = currentSnapshot;
+    if (
+      !latest ||
+      latest.revision !== pendingAutoAnalyzeRevision ||
+      !shouldAutoAnalyzeSnapshot(latest)
+    ) {
+      return;
+    }
+    lastAutoAnalyzedRevision = latest.revision;
+    void analyzeCurrentState("auto");
+  }, AUTO_ANALYZE_STABLE_MS);
+}
+
+function shouldAutoAnalyzeSnapshot(snapshot: GameStateSnapshot): boolean {
+  return Boolean(
+    settings.autoAnalyze &&
+      snapshot.activePlayer === "self" &&
+      !snapshot.animationPending &&
+      snapshot.revision !== lastAutoAnalyzedRevision &&
+      !busy &&
+      settings.liveRecommendationsEnabled &&
+      settings.liveRecommendationsRiskAcceptedAt,
+  );
+}
+
+async function analyzeCurrentState(source: "manual" | "auto" = "manual"): Promise<AppStatus> {
   if (busy) {
     return getStatus();
+  }
+  if (source === "manual" && pendingAutoAnalyzeTimer) {
+    clearTimeout(pendingAutoAnalyzeTimer);
+    pendingAutoAnalyzeTimer = undefined;
+    pendingAutoAnalyzeRevision = undefined;
   }
   const analysisStartedAt = Date.now();
   analysisAbortController = new AbortController();
@@ -463,6 +503,9 @@ async function analyzeCurrentState(): Promise<AppStatus> {
     busy = false;
     analysisAbortController = undefined;
     broadcastStatus();
+    if (source === "auto") {
+      scheduleAutoAnalyze(currentSnapshot);
+    }
   }
   return getStatus();
 }
