@@ -7,26 +7,19 @@ import { existsSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { CardCatalog } from "../core/card-catalog.js";
-import { PowerLogParser } from "../core/power-log-parser.js";
-import { PowerLogWatcher } from "../core/power-log-watcher.js";
-import { enrichSnapshotWithCatalog } from "../core/snapshot-enricher.js";
+import { getActiveAgent } from "../shared/settings-model.js";
 import type {
   AppSettings,
   AppStatus,
   AgentProfile,
-  GameStateSnapshot,
-  LogStatus,
 } from "../shared/types.js";
 import { AnalysisService } from "./analysis-service.js";
 import { CredentialStore } from "./credential-store.js";
 import { DiagnosticLog } from "./diagnostic-log.js";
 import { HistoryDatabase } from "./history-database.js";
 import { buildAppStatus } from "./app-status.js";
-import {
-  expandEnvironmentVariables,
-  inspectPowerLog,
-} from "./power-log-locator.js";
 import { IPC, registerIpcHandlers } from "./ipc-handlers.js";
+import { PowerLogRuntime } from "./power-log-runtime.js";
 import { SettingsStore } from "./settings-store.js";
 import { WindowManager } from "./window-manager.js";
 
@@ -36,17 +29,9 @@ let credentialStore: CredentialStore;
 let historyDatabase: HistoryDatabase;
 let diagnosticLog: DiagnosticLog;
 let analysisService: AnalysisService;
+let powerLogRuntime: PowerLogRuntime;
 let catalog: CardCatalog;
-let parser: PowerLogParser;
-let watcher: PowerLogWatcher | undefined;
-let logDiscoveryTimer: NodeJS.Timeout | undefined;
 let settings: AppSettings;
-let currentSnapshot: GameStateSnapshot | undefined;
-let logStatus: LogStatus = {
-  available: false,
-  path: "",
-  message: "尚未开始监听 Power.log。",
-};
 
 const gotTheLock = app.requestSingleInstanceLock();
 if (!gotTheLock) {
@@ -67,15 +52,23 @@ app.whenReady().then(async () => {
   catalog = await CardCatalog.load(resolveCatalogPath());
   catalog.setLanguage(settings.language);
   historyDatabase.setCardCatalogVersion(catalog.version);
-  parser = new PowerLogParser();
+  powerLogRuntime = new PowerLogRuntime({
+    getSettings: () => settings,
+    getCatalog: () => catalog,
+    historyDatabase,
+    onLogSourceChanged: () => analysisService.resetForLogChange(),
+    onSnapshotChanged: (snapshot) => analysisService.onSnapshotChanged(snapshot),
+    broadcastStatus,
+    writeDiagnostic,
+  });
   analysisService = new AnalysisService({
     getSettings: () => settings,
     saveSettings: async (nextSettings) => {
       settings = await settingsStore.save(nextSettings);
       return settings;
     },
-    getSnapshot: () => currentSnapshot,
-    refreshCurrentLog,
+    getSnapshot: () => powerLogRuntime.snapshot(),
+    refreshCurrentLog: () => powerLogRuntime.refreshCurrentLog(),
     getCatalog: () => catalog,
     credentialStore,
     historyDatabase,
@@ -94,7 +87,7 @@ app.whenReady().then(async () => {
   Menu.setApplicationMenu(null);
   windowManager.createWindows({ overlayVisible: settings.overlayVisible });
   registerIpcHandlers({
-    refreshCurrentLog,
+    refreshCurrentLog: () => powerLogRuntime.refreshCurrentLog(),
     getStatus,
     getActiveAgent: activeAgent,
     saveSettings,
@@ -105,7 +98,7 @@ app.whenReady().then(async () => {
     windowManager,
   });
   registerShortcuts();
-  await startWatcher();
+  await powerLogRuntime.start();
   broadcastStatus();
 });
 
@@ -116,10 +109,7 @@ app.on("window-all-closed", () => {
 });
 
 app.on("will-quit", () => {
-  watcher?.stop();
-  if (logDiscoveryTimer) {
-    clearInterval(logDiscoveryTimer);
-  }
+  powerLogRuntime?.dispose();
   analysisService?.dispose();
   globalShortcut.unregisterAll();
   historyDatabase?.close();
@@ -142,88 +132,11 @@ function registerShortcuts(): void {
 async function saveSettings(nextSettings: AppSettings): Promise<AppStatus> {
   catalog.setLanguage(nextSettings.language);
   settings = await settingsStore.save(nextSettings);
-  await startWatcher();
+  await powerLogRuntime.start();
   setOverlayVisible(settings.overlayVisible);
   registerShortcuts();
   broadcastStatus();
   return getStatus();
-}
-
-async function startWatcher(): Promise<void> {
-  if (logDiscoveryTimer) {
-    clearInterval(logDiscoveryTimer);
-  }
-  await refreshWatcher();
-  logDiscoveryTimer = setInterval(() => void refreshWatcher(), 2_000);
-}
-
-async function refreshWatcher(): Promise<void> {
-  const inspection = await inspectPowerLog(settings.powerLogPath);
-  const location = inspection.location;
-  const path = location?.path ?? inspection.expectedPath;
-  if (watcher?.path === path) {
-    return;
-  }
-
-  watcher?.stop();
-  parser.reset();
-  currentSnapshot = undefined;
-  analysisService.resetForLogChange();
-  logStatus = {
-    available: Boolean(location),
-    path,
-    message: powerLogStatusMessage(inspection),
-  };
-  watcher = new PowerLogWatcher(path, parser);
-  watcher.on("status", (nextStatus) => {
-    logStatus = nextStatus;
-    broadcastStatus();
-  });
-  watcher.on("change", () => {
-    const next = enrichSnapshotWithCatalog(
-      parser.snapshot(catalog.version),
-      catalog,
-    );
-    currentSnapshot = next;
-    analysisService.onSnapshotChanged(next);
-    historyDatabase.saveSnapshot(next);
-    broadcastStatus();
-  });
-  watcher.on("error", (error) => {
-    logStatus = {
-      available: false,
-      path,
-      message: `日志监听失败：${error.message}`,
-    };
-    broadcastStatus();
-  });
-  watcher.start();
-  broadcastStatus();
-}
-
-function powerLogStatusMessage(
-  inspection: Awaited<ReturnType<typeof inspectPowerLog>>,
-): string {
-  if (inspection.location) {
-    return `已发现 Power.log：${inspection.location.source}`;
-  }
-  if (inspection.latestSession) {
-    return `已发现最新炉石日志目录，但其中没有 Power.log：${inspection.latestSession.powerLogPath}。请确认已手动启用 Power.log；未进入对局时也可能暂未生成。`;
-  }
-  return "未找到 Power.log，请启动炉石并确认已手动启用日志。";
-}
-
-async function refreshCurrentLog(): Promise<void> {
-  if (!watcher) {
-    return;
-  }
-  try {
-    await watcher.pollNow();
-  } catch (error) {
-    writeDiagnostic("power_log.refresh_failed", {
-      error: error instanceof Error ? error.message : "刷新 Power.log 失败。",
-    });
-  }
 }
 
 function toggleOverlay(): AppStatus {
@@ -241,9 +154,9 @@ function getStatus(): AppStatus {
   const analysisState = analysisService.state();
   return buildAppStatus({
     settings,
-    logStatus,
+    logStatus: powerLogRuntime.status(),
     catalog,
-    snapshot: currentSnapshot,
+    snapshot: powerLogRuntime.snapshot(),
     analysis: analysisState.analysis,
     visualValidation: analysisState.visualValidation,
     busy: analysisState.busy,
@@ -276,17 +189,7 @@ function diagnosticSettings() {
 }
 
 function activeAgent(): AgentProfile {
-  return (
-    settings.agents.find((agent) => agent.id === settings.activeAgentId) ??
-    settings.agents[0] ?? {
-      id: "default",
-      name: "默认 Agent",
-      baseUrl: settings.baseUrl,
-      model: settings.model,
-      transport: settings.transport,
-      timeoutMs: settings.timeoutMs,
-    }
-  );
+  return getActiveAgent(settings);
 }
 
 function broadcastStatus(): void {
