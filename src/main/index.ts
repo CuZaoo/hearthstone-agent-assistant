@@ -145,6 +145,7 @@ function createWindows(): void {
   const preload = join(import.meta.dirname, "preload.cjs");
   const rendererUrl = process.env.VITE_DEV_SERVER_URL;
   const rendererFile = join(app.getAppPath(), "dist", "renderer", "index.html");
+  const windowIcon = resolveWindowIconPath();
 
   mainWindow = new BrowserWindow({
     width: 960,
@@ -152,6 +153,7 @@ function createWindows(): void {
     minWidth: 820,
     minHeight: 640,
     frame: false,
+    icon: windowIcon,
     title: "炉石对局 Agent 助手",
     webPreferences: {
       preload,
@@ -173,6 +175,7 @@ function createWindows(): void {
     skipTaskbar: true,
     show: settings.overlayVisible,
     focusable: false,
+    icon: windowIcon,
     webPreferences: {
       preload,
       contextIsolation: true,
@@ -195,6 +198,13 @@ function createWindows(): void {
     void mainWindow.loadFile(rendererFile);
     void overlayWindow.loadFile(rendererFile, { query: { view: "overlay" } });
   }
+}
+
+function resolveWindowIconPath(): string | undefined {
+  const iconPath = app.isPackaged
+    ? join(process.resourcesPath, "build", "icon.ico")
+    : join(app.getAppPath(), "build", "icon.ico");
+  return existsSync(iconPath) ? iconPath : undefined;
 }
 
 function registerShortcuts(): void {

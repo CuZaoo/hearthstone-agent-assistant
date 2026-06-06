@@ -18,6 +18,7 @@
     "catalog:import-hdt": "node scripts/import-hdt-carddefs.mjs",
     "catalog:validate": "node scripts/validate-card-catalog.mjs assets/card-catalog.zhCN.json",
     "features:build": "electron scripts/build-image-features.mjs",
+    "icon:generate": "powershell -NoProfile -ExecutionPolicy Bypass -File .\\scripts\\generate-app-icon.ps1 -OutDir .\\build",
     "log:diagnose": "node --experimental-strip-types --loader ./scripts/ts-source-loader.mjs scripts/diagnose-power-log.mts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.main.json"
@@ -54,9 +55,14 @@
       {
         "from": "assets",
         "to": "assets"
+      },
+      {
+        "from": "build/icon.ico",
+        "to": "build/icon.ico"
       }
     ],
     "win": {
+      "icon": "build/icon.ico",
       "target": "nsis"
     }
   }
