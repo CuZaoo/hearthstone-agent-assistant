@@ -1,7 +1,5 @@
 import { createHash } from "node:crypto";
-import { emptyPlayerState } from "../shared/defaults.js";
 import type {
-  CardReference,
   GameEvent,
   GameStateSnapshot,
   PlayerSide,
@@ -25,16 +23,14 @@ import {
   TAG_LINE,
   TIMESTAMP,
   UNKNOWN_PLAYER_NAME,
-  byZonePosition,
-  isCardType,
   isRelevantPowerLine,
   isVisibleEventTag,
   parseTagValue,
   shouldInferSelfFromOptions,
   shouldReadEntityDescriptionMetadata,
   shouldReplaceName,
-  visibleEntityName,
 } from "./power-log-patterns.js";
+import { buildPowerLogSnapshot } from "./power-log-snapshot.js";
 
 export class PowerLogParser {
   private state: ParserState = this.newState();
@@ -221,96 +217,11 @@ export class PowerLogParser {
   }
 
   snapshot(cardCatalogVersion: string): GameStateSnapshot {
-    const self = emptyPlayerState();
-    const opponent = emptyPlayerState();
-
-    for (const entity of this.state.entities.values()) {
-      const side = this.sideForEntity(entity);
-      if (!side) {
-        continue;
-      }
-      const player = side === "self" ? self : opponent;
-      const zone = entity.zone ?? String(entity.tags.ZONE ?? "");
-
-      if (zone === "HAND") {
-        player.handCount += 1;
-        if (side === "self") {
-          player.hand.push(this.toCardReference(entity));
-        }
-      } else if (zone === "PLAY" || zone === "SECRET") {
-        if (this.isHero(entity)) {
-          const health = this.numberTag(entity, "HEALTH");
-          const damage = this.numberTag(entity, "DAMAGE") ?? 0;
-          player.hero = {
-            entityId: entity.entityId,
-            cardId: entity.cardId,
-            name: entity.name,
-            health: health === undefined ? undefined : Math.max(0, health - damage),
-            armor: this.numberTag(entity, "ARMOR"),
-            attack: this.numberTag(entity, "ATK"),
-            exhausted: this.booleanTag(entity, "EXHAUSTED"),
-          };
-        } else if (this.isHeroPower(entity)) {
-          player.heroPower = this.toCardReference(entity);
-        } else if (this.isWeapon(entity)) {
-          const durability = this.numberTag(entity, "DURABILITY");
-          const damage = this.numberTag(entity, "DAMAGE") ?? 0;
-          player.weapon = {
-            entityId: entity.entityId,
-            cardId: entity.cardId,
-            name: entity.name,
-            attack: this.numberTag(entity, "ATK"),
-            durability:
-              durability === undefined ? undefined : Math.max(0, durability - damage),
-          };
-        } else if (this.isSecret(entity) || zone === "SECRET") {
-          player.secretCount += 1;
-        } else if (this.isBoardEntity(entity)) {
-          player.board.push(this.toCardReference(entity));
-        }
-      } else if (zone === "DECK") {
-        player.deckCount = (player.deckCount ?? 0) + 1;
-      }
-
-      if (this.isPlayer(entity)) {
-        const resources = this.numberTag(entity, "RESOURCES") ?? player.maxMana;
-        const resourcesUsed = this.numberTag(entity, "RESOURCES_USED") ?? 0;
-        const temporaryResources = this.numberTag(entity, "TEMP_RESOURCES") ?? 0;
-        const overloadLocked = this.numberTag(entity, "OVERLOAD_LOCKED") ?? 0;
-        player.maxMana = resources;
-        player.mana = Math.max(
-          0,
-          resources + temporaryResources - resourcesUsed - overloadLocked,
-        );
-        player.overloadLocked =
-          overloadLocked;
-        player.deckCount = this.numberTag(entity, "DECK_COUNT") ?? player.deckCount;
-        player.fatigue = this.numberTag(entity, "FATIGUE") ?? player.fatigue;
-      }
-    }
-
-    self.hand.sort(byZonePosition);
-    self.board.sort(byZonePosition);
-    opponent.board.sort(byZonePosition);
-
-    return Object.freeze({
-      revision: String(this.revisionCounter),
-      gameMode: this.state.gameMode,
-      gameType: this.state.gameType,
-      turn: this.state.turn,
-      activePlayer:
-        this.state.activePlayerId !== undefined
-          ? (this.sideForPlayerId(this.state.activePlayerId) ?? "unknown")
-          : this.state.activePlayer,
-      self,
-      opponent,
-      visibleHistory: [...this.state.visibleHistory].slice(-50),
-      uncertainties: [...this.state.uncertainties],
+    return buildPowerLogSnapshot(
+      this.state,
+      this.revisionCounter,
       cardCatalogVersion,
-      gameBuild: this.state.gameBuild,
-      animationPending: this.state.animationDepth > 0,
-      capturedAt: new Date().toISOString(),
-    });
+    );
   }
 
   private applyTag(
@@ -540,62 +451,9 @@ export class PowerLogParser {
     );
   }
 
-  private toCardReference(entity: EntityState): CardReference {
-    return {
-      entityId: entity.entityId,
-      cardId: entity.cardId,
-      name: visibleEntityName(entity.name),
-      cardType:
-        entity.tags.CARDTYPE === undefined
-          ? undefined
-          : String(entity.tags.CARDTYPE),
-      zonePosition: entity.zonePosition,
-      attack: this.numberTag(entity, "ATK"),
-      health: this.numberTag(entity, "HEALTH"),
-      damage: this.numberTag(entity, "DAMAGE"),
-      exhausted: this.booleanTag(entity, "EXHAUSTED"),
-      taunt: this.booleanTag(entity, "TAUNT"),
-      divineShield: this.booleanTag(entity, "DIVINE_SHIELD"),
-      poisonous: this.booleanTag(entity, "POISONOUS"),
-      lifesteal: this.booleanTag(entity, "LIFESTEAL"),
-      dormant: this.booleanTag(entity, "DORMANT"),
-      cost: this.numberTag(entity, "COST"),
-      tags: { ...entity.tags },
-    };
-  }
-
-  private isPlayer(entity: EntityState): boolean {
-    return isCardType(entity, "PLAYER", 2);
-  }
-
-  private isHero(entity: EntityState): boolean {
-    return isCardType(entity, "HERO", 3);
-  }
-
-  private isWeapon(entity: EntityState): boolean {
-    return isCardType(entity, "WEAPON", 7);
-  }
-
-  private isHeroPower(entity: EntityState): boolean {
-    return isCardType(entity, "HERO_POWER", 10);
-  }
-
-  private isBoardEntity(entity: EntityState): boolean {
-    return isCardType(entity, "MINION", 4) || isCardType(entity, "LOCATION", 39);
-  }
-
-  private isSecret(entity: EntityState): boolean {
-    return Number(entity.tags.SECRET) === 1 || entity.tags.SECRET === true;
-  }
-
   private numberTag(entity: EntityState, tag: string): number | undefined {
     const value = entity.tags[tag];
     return value === undefined ? undefined : Number(value);
-  }
-
-  private booleanTag(entity: EntityState, tag: string): boolean | undefined {
-    const value = entity.tags[tag];
-    return value === undefined ? undefined : Number(value) === 1 || value === true;
   }
 
   private pushHistory(event: GameEvent): void {
