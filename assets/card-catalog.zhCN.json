@@ -5,6 +5,17 @@
   "gameBuild": 243002,
   "entries": [
     {
+      "cardId": "AT_037t",
+      "name": "树苗",
+      "text": "",
+      "cost": 1,
+      "attack": 1,
+      "health": 1,
+      "cardType": "MINION",
+      "collectible": false,
+      "standard": true
+    },
+    {
       "cardId": "BAR_COIN1",
       "name": "幸运币",
       "text": "在本回合中，获得一个\n法力水晶。",

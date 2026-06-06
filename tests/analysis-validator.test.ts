@@ -40,6 +40,17 @@ const catalog = new CardCatalog({
       collectible: true,
       standard: true,
     },
+    {
+      cardId: "AT_037t",
+      name: "树苗",
+      text: "",
+      cost: 1,
+      attack: 1,
+      health: 1,
+      cardType: "MINION",
+      collectible: false,
+      standard: true,
+    },
   ],
 });
 
@@ -387,5 +398,30 @@ describe("validateSnapshotForAnalysis", () => {
 
     expect(report.ok).toBe(false);
     expect(report.errors.join(" ")).toContain("缺失卡(MISSING_CARD)");
+  });
+
+  it("allows standard visible tokens included in the catalog", () => {
+    const report = validateSnapshotForAnalysis(
+      {
+        ...snapshot,
+        opponent: {
+          ...snapshot.opponent,
+          board: [
+            {
+              entityId: 42,
+              cardId: "AT_037t",
+              name: "树苗",
+              cost: 1,
+              attack: 1,
+              health: 1,
+              tags: {},
+            },
+          ],
+        },
+      },
+      catalog,
+    );
+
+    expect(report.ok).toBe(true);
   });
 });

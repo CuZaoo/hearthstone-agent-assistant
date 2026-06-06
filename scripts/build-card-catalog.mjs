@@ -1,6 +1,11 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
+const STANDARD_VISIBLE_TOKEN_IDS = new Set([
+  "AT_037t",
+  "BAR_COIN1",
+]);
+
 const args = parseArgs(process.argv.slice(2));
 if (!args.cards || !args.sets || !args.out) {
   fail(
@@ -29,6 +34,26 @@ const entries = cards
     imageHash: features.get(card.id),
   }))
   .sort((left, right) => left.cardId.localeCompare(right.cardId));
+const entryIds = new Set(entries.map((entry) => entry.cardId));
+for (const card of cards.filter((card) => STANDARD_VISIBLE_TOKEN_IDS.has(card.id))) {
+  if (entryIds.has(card.id)) {
+    continue;
+  }
+  entries.push({
+    cardId: card.id,
+    name: card.name,
+    text: card.text ?? "",
+    cost: card.manaCost ?? card.cost ?? 0,
+    attack: card.attack,
+    health: card.health,
+    cardType: normalizeCardType(card.cardType ?? card.type, card.cardTypeId),
+    collectible: Boolean(card.collectible),
+    standard: true,
+    imageHash: features.get(card.id),
+  });
+  entryIds.add(card.id);
+}
+entries.sort((left, right) => left.cardId.localeCompare(right.cardId));
 
 const output = {
   version: args.version ?? new Date().toISOString().slice(0, 10),
