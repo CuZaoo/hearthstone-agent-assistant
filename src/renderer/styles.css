@@ -93,11 +93,11 @@ button, input, select {
 }
 
 .dashboard {
-  border: 1px solid var(--gold-line);
-  border-radius: var(--radius-lg);
+  border: none;
+  border-radius: 0;
   background: linear-gradient(180deg, #12100e 0%, #0f0d0a 100%);
   overflow: hidden;
-  box-shadow: var(--shadow-lg), inset 0 1px 0 rgba(201, 160, 74, 0.05);
+  box-shadow: none;
   display: flex;
   flex-direction: column;
 }
@@ -897,11 +897,11 @@ button, input, select {
   min-height: 540px;
   min-width: 420px;
   background: linear-gradient(180deg, #12100e 0%, #0f0d0a 100%);
-  border: 1px solid var(--gold-line);
-  border-radius: var(--radius-lg);
+  border: none;
+  border-radius: 0;
   display: flex;
   flex-direction: column;
-  box-shadow: var(--shadow-lg), inset 0 1px 0 rgba(201, 160, 74, 0.05);
+  box-shadow: none;
   overflow: hidden;
   position: relative;
 }

@@ -239,7 +239,7 @@ export class AgentClient {
           createdAt: new Date().toISOString(),
         };
       }
-      if (isDisplayableValidationFailure(report.errors)) {
+      if (attempt === 1 && isDisplayableValidationFailure(report.errors)) {
         return {
           ...result,
           warnings: [

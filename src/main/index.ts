@@ -161,11 +161,12 @@ function createWindows(): void {
     },
   });
 
+  const [mainX = 0, mainY = 0] = mainWindow.getPosition();
   overlayWindow = new BrowserWindow({
     width: 420,
     height: 540,
-    x: mainWindow.getPosition()[0] - 420,
-    y: mainWindow.getPosition()[1] + 30,
+    x: mainX - 420,
+    y: mainY + 30,
     frame: false,
     transparent: true,
     alwaysOnTop: true,

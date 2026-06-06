@@ -135,7 +135,8 @@ describe("AgentClient", () => {
   it("returns displayable suggestions when only mana validation fails", async () => {
     const fetchMock = vi
       .spyOn(globalThis, "fetch")
-      .mockResolvedValue(responseFor(overBudgetResult()));
+      .mockResolvedValueOnce(responseFor(overBudgetResult()))
+      .mockResolvedValueOnce(responseFor(overBudgetResult()));
     const client = new AgentClient(settings, "secret-key", catalog);
 
     const result = await client.analyze({
@@ -152,10 +153,13 @@ describe("AgentClient", () => {
       },
     });
 
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(result.summary).toBe("费用不足但可展示");
     expect(result.warnings.join(" ")).toContain("本地校验提示");
     expect(result.warnings.join(" ")).toContain("基础费用超过当前法力");
+    expect(String(fetchMock.mock.calls[1]?.[1]?.body)).toContain(
+      "基础费用超过当前法力",
+    );
   });
 
   it("keeps valid candidates when another route fails validation", async () => {

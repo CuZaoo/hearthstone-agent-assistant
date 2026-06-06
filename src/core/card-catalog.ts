@@ -36,14 +36,10 @@ export class CardCatalog {
     this.version = file.version;
     this.generatedAt = file.generatedAt;
     this.gameBuild = file.gameBuild;
-    for (const entry of file.entries) {
-      this.entries.set(entry.cardId, {
-        ...entry,
-        nameZh: entry.nameZh ?? entry.name,
-        nameEn: entry.nameEn ?? entry.name,
-        textZh: entry.textZh ?? entry.text,
-        textEn: entry.textEn ?? entry.text,
-      });
+    for (const entry of [...file.entries, ...BUILT_IN_VISIBLE_CARDS]) {
+      if (!this.entries.has(entry.cardId)) {
+        this.entries.set(entry.cardId, normalizeEntry(entry));
+      }
     }
   }
 
@@ -109,3 +105,44 @@ export class CardCatalog {
     return [...this.entries.values()];
   }
 }
+
+function normalizeEntry(entry: CardCatalogEntry): CardCatalogEntry {
+  return {
+    ...entry,
+    nameZh: entry.nameZh ?? entry.name,
+    nameEn: entry.nameEn ?? entry.name,
+    textZh: entry.textZh ?? entry.text,
+    textEn: entry.textEn ?? entry.text,
+  };
+}
+
+const BUILT_IN_VISIBLE_CARDS: CardCatalogEntry[] = [
+  {
+    cardId: "AT_037t",
+    name: "树苗",
+    nameZh: "树苗",
+    nameEn: "Sapling",
+    text: "",
+    textZh: "",
+    textEn: "",
+    cost: 1,
+    attack: 1,
+    health: 1,
+    cardType: "MINION",
+    collectible: false,
+    standard: true,
+  },
+  {
+    cardId: "BAR_COIN1",
+    name: "幸运币",
+    nameZh: "幸运币",
+    nameEn: "The Coin",
+    text: "在本回合中，获得一个\n法力水晶。",
+    textZh: "在本回合中，获得一个\n法力水晶。",
+    textEn: "Gain 1 Mana Crystal this turn only.",
+    cost: 0,
+    cardType: "SPELL",
+    collectible: false,
+    standard: true,
+  },
+];
