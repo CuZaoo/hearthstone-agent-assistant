@@ -1,6 +1,5 @@
 import {
   app,
-  BrowserWindow,
   desktopCapturer,
   dialog,
   globalShortcut,
@@ -28,15 +27,16 @@ import type {
 import { CredentialStore } from "./credential-store.js";
 import { DiagnosticLog } from "./diagnostic-log.js";
 import { HistoryDatabase } from "./history-database.js";
+import { buildAppStatus } from "./app-status.js";
 import {
   expandEnvironmentVariables,
   inspectPowerLog,
 } from "./power-log-locator.js";
 import { SettingsStore } from "./settings-store.js";
 import { VisualValidator } from "./visual-validator.js";
+import { WindowManager } from "./window-manager.js";
 
-let mainWindow: BrowserWindow | undefined;
-let overlayWindow: BrowserWindow | undefined;
+const windowManager = new WindowManager();
 let settingsStore: SettingsStore;
 let credentialStore: CredentialStore;
 let historyDatabase: HistoryDatabase;
@@ -90,10 +90,7 @@ if (!gotTheLock) {
   app.quit();
 }
 app.on("second-instance", () => {
-  if (mainWindow) {
-    if (mainWindow.isMinimized()) mainWindow.restore();
-    mainWindow.focus();
-  }
+  windowManager.focusMainWindow();
 });
 
 app.whenReady().then(async () => {
@@ -116,7 +113,7 @@ app.whenReady().then(async () => {
   });
 
   Menu.setApplicationMenu(null);
-  createWindows();
+  windowManager.createWindows({ overlayVisible: settings.overlayVisible });
   registerIpc();
   registerShortcuts();
   await startWatcher();
@@ -140,72 +137,6 @@ app.on("will-quit", () => {
   globalShortcut.unregisterAll();
   historyDatabase?.close();
 });
-
-function createWindows(): void {
-  const preload = join(import.meta.dirname, "preload.cjs");
-  const rendererUrl = process.env.VITE_DEV_SERVER_URL;
-  const rendererFile = join(app.getAppPath(), "dist", "renderer", "index.html");
-  const windowIcon = resolveWindowIconPath();
-
-  mainWindow = new BrowserWindow({
-    width: 960,
-    height: 700,
-    minWidth: 820,
-    minHeight: 640,
-    frame: false,
-    icon: windowIcon,
-    title: "炉石对局 Agent 助手",
-    webPreferences: {
-      preload,
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: false,
-    },
-  });
-
-  const [mainX = 0, mainY = 0] = mainWindow.getPosition();
-  overlayWindow = new BrowserWindow({
-    width: 420,
-    height: 540,
-    x: mainX - 420,
-    y: mainY + 30,
-    frame: false,
-    transparent: true,
-    alwaysOnTop: true,
-    skipTaskbar: true,
-    show: settings.overlayVisible,
-    focusable: false,
-    icon: windowIcon,
-    webPreferences: {
-      preload,
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: false,
-    },
-  });
-  mainWindow.on("closed", () => {
-    mainWindow = undefined;
-    app.quit();
-  });
-  overlayWindow.on("closed", () => {
-    overlayWindow = undefined;
-  });
-
-  if (rendererUrl) {
-    void mainWindow.loadURL(rendererUrl);
-    void overlayWindow.loadURL(`${rendererUrl}?view=overlay`);
-  } else {
-    void mainWindow.loadFile(rendererFile);
-    void overlayWindow.loadFile(rendererFile, { query: { view: "overlay" } });
-  }
-}
-
-function resolveWindowIconPath(): string | undefined {
-  const iconPath = app.isPackaged
-    ? join(process.resourcesPath, "build", "icon.ico")
-    : join(app.getAppPath(), "build", "icon.ico");
-  return existsSync(iconPath) ? iconPath : undefined;
-}
 
 function registerShortcuts(): void {
   globalShortcut.unregisterAll();
@@ -240,22 +171,10 @@ function registerIpc(): void {
   ipcMain.handle(IPC.analyze, () => analyzeCurrentState("manual"));
   ipcMain.handle(IPC.testAgentConnection, () => testAgentConnection());
   ipcMain.handle(IPC.toggleOverlay, () => toggleOverlay());
-  ipcMain.handle(IPC.showMainWindow, () => {
-    if (mainWindow) {
-      if (mainWindow.isVisible()) {
-        mainWindow.hide();
-      } else {
-        mainWindow.show();
-        mainWindow.focus();
-      }
-    }
-  });
-  ipcMain.handle(IPC.windowMinimize, () => mainWindow?.minimize());
-  ipcMain.handle(IPC.windowMaximize, () => {
-    if (mainWindow?.isMaximized()) mainWindow.unmaximize();
-    else mainWindow?.maximize();
-  });
-  ipcMain.handle(IPC.windowClose, () => mainWindow?.close());
+  ipcMain.handle(IPC.showMainWindow, () => windowManager.toggleMainWindow());
+  ipcMain.handle(IPC.windowMinimize, () => windowManager.minimizeMainWindow());
+  ipcMain.handle(IPC.windowMaximize, () => windowManager.toggleMainWindowMaximized());
+  ipcMain.handle(IPC.windowClose, () => windowManager.closeMainWindow());
   ipcMain.handle(IPC.setApiKey, async (_event, apiKey: string, agentId?: string) => {
     await credentialStore.setApiKey(apiKey, agentId ?? activeAgent().id);
     return Boolean(apiKey.trim());
@@ -778,6 +697,7 @@ async function chooseFallbackAgent(
     message: `${failedAgent.name} 分析失败。是否切换到备用 Agent？`,
     detail: reason,
   };
+  const mainWindow = windowManager.getMainWindow();
   const response = mainWindow
     ? await dialog.showMessageBox(mainWindow, dialogOptions)
     : await dialog.showMessageBox(dialogOptions);
@@ -844,37 +764,27 @@ function assertLiveRecommendationsEnabled(): void {
 }
 
 function toggleOverlay(): AppStatus {
-  setOverlayVisible(!overlayWindow?.isVisible());
-  settings = { ...settings, overlayVisible: Boolean(overlayWindow?.isVisible()) };
+  settings = { ...settings, overlayVisible: windowManager.toggleOverlayVisible() };
   void settingsStore.save(settings);
   broadcastStatus();
   return getStatus();
 }
 
 function setOverlayVisible(visible: boolean): void {
-  if (visible) {
-    overlayWindow?.showInactive();
-  } else {
-    overlayWindow?.hide();
-  }
+  windowManager.setOverlayVisible(visible);
 }
 
 function getStatus(): AppStatus {
-  return {
+  return buildAppStatus({
     settings,
-    log: logStatus,
-    catalog: {
-      ready: catalog.isReady(),
-      version: catalog.version,
-      entryCount: catalog.size(),
-      gameBuild: catalog.gameBuild,
-    },
+    logStatus,
+    catalog,
     snapshot: currentSnapshot,
     analysis: currentAnalysis,
     visualValidation,
     busy,
     message: statusMessage,
-  };
+  });
 }
 
 function diagnosticAgentEvent({
@@ -972,13 +882,7 @@ function cardSummary(card: GameStateSnapshot["self"]["board"][number]) {
 }
 
 function broadcastStatus(): void {
-  const status = getStatus();
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.webContents.send(IPC.statusChanged, status);
-  }
-  if (overlayWindow && !overlayWindow.isDestroyed()) {
-    overlayWindow.webContents.send(IPC.statusChanged, status);
-  }
+  windowManager.broadcast(IPC.statusChanged, getStatus());
 }
 
 function resolveCatalogPath(): string {
