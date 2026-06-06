@@ -20,6 +20,7 @@ const SYSTEM_PROMPT = `你是炉石传说标准构筑对局分析助手。
 每条路线必须引用请求中存在的实体 ID，并说明理由、主要风险与置信度。
 sourceCardId 必须与 sourceEntityId 对应实体的 cardId 完全一致；end-turn 不得携带来源或目标。
 description 只描述动作本身，例如“打出神圣新星”或“卡多雷女祭司攻击敌方英雄”，不得把法术写成战吼，不得编造卡牌文本外的效果。
+幸运币或其他“本回合获得法力”的牌只能在后续动作会立刻使用这点法力时打出；不得推荐“打出幸运币，然后结束回合”。
 如果某条路线无法满足实体、费用、攻击、目标和场面容量约束，就不要返回这条路线。
 只返回一个 JSON 对象，不要 Markdown，不要代码块，不要解释性前后缀。`;
 
@@ -442,6 +443,7 @@ function buildUserContent(
 - play-card 必须来自 self.hand；attack 必须来自可攻击的 self.board 或英雄；hero-power 只能使用 self.heroPower。
 - sourceCardId 必须等于该 sourceEntityId 的 cardId；没有 cardId 时填 null。
 - description 不要复述或改写不存在的效果标签，只写卡名、动作和目标。
+- 不要为了“用掉资源”而打出幸运币；只有打出后能继续使用获得的本回合法力，才允许把幸运币放进路线。
 ${repair}${schema}\n${JSON.stringify(request)}`;
 }
 

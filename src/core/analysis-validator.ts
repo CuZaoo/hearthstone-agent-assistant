@@ -1,5 +1,6 @@
 import type {
   AnalysisResult,
+  CardReference,
   GameStateSnapshot,
   RecommendedAction,
   ValidationReport,
@@ -90,6 +91,7 @@ export function validateAnalysisResult(
     let remainingMana = snapshot.self.mana;
     let boardCount = snapshot.self.board.length;
     const usedSourceIds = new Set<number>();
+    const unspentTemporaryManaSources: number[] = [];
     for (const [actionIndex, action] of candidate.actions.entries()) {
       validateAction(action, snapshot, errors, warnings);
       if (
@@ -114,6 +116,12 @@ export function validateAnalysisResult(
         if (remainingMana < 0) {
           errors.push(`路线 ${candidate.rank} 的基础费用超过当前法力。`);
         }
+        if (card && isTemporaryManaCard(card, catalog)) {
+          remainingMana += 1;
+          unspentTemporaryManaSources.push(card.entityId);
+        } else if (cost > 0 && unspentTemporaryManaSources.length > 0) {
+          unspentTemporaryManaSources.pop();
+        }
         if (
           catalogEntry?.cardType === "MINION" ||
           catalogEntry?.cardType === "LOCATION"
@@ -129,11 +137,17 @@ export function validateAnalysisResult(
         if (remainingMana < 0) {
           errors.push(`路线 ${candidate.rank} 的基础费用超过当前法力。`);
         }
+        if (unspentTemporaryManaSources.length > 0) {
+          unspentTemporaryManaSources.pop();
+        }
       }
       if (action.type === "trade") {
         remainingMana -= 1;
         if (remainingMana < 0) {
           errors.push(`路线 ${candidate.rank} 的基础费用超过当前法力。`);
+        }
+        if (unspentTemporaryManaSources.length > 0) {
+          unspentTemporaryManaSources.pop();
         }
       }
       if (
@@ -143,9 +157,27 @@ export function validateAnalysisResult(
         errors.push(`路线 ${candidate.rank} 在结束回合后仍包含动作。`);
       }
     }
+    if (unspentTemporaryManaSources.length > 0) {
+      errors.push(
+        `路线 ${candidate.rank} 打出临时法力牌后没有使用获得的法力。`,
+      );
+    }
   }
 
   return { ok: errors.length === 0, errors, warnings };
+}
+
+function isTemporaryManaCard(card: CardReference, catalog: CardCatalog): boolean {
+  const catalogEntry = catalog.get(card.cardId);
+  const name = catalogEntry?.name ?? card.name ?? "";
+  const text = catalogEntry?.text ?? card.text ?? "";
+  const cardId = card.cardId ?? "";
+  return (
+    (catalogEntry?.cost ?? card.cost ?? 0) === 0 &&
+    (cardId.includes("COIN") ||
+      name === "幸运币" ||
+      /本回合.*法力|法力.*本回合/.test(text))
+  );
 }
 
 function validateAction(

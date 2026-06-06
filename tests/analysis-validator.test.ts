@@ -22,6 +22,24 @@ const catalog = new CardCatalog({
       collectible: true,
       standard: true,
     },
+    {
+      cardId: "BAR_COIN1",
+      name: "幸运币",
+      text: "在本回合中，获得一个法力水晶。",
+      cost: 0,
+      cardType: "SPELL",
+      collectible: false,
+      standard: true,
+    },
+    {
+      cardId: "CARD_003",
+      name: "三费测试卡",
+      text: "",
+      cost: 3,
+      cardType: "SPELL",
+      collectible: true,
+      standard: true,
+    },
   ],
 });
 
@@ -225,6 +243,103 @@ describe("validateAnalysisResult", () => {
             cost: 2,
             tags: {},
           },
+        },
+      },
+      catalog,
+    );
+
+    expect(report.ok).toBe(true);
+  });
+
+  it("rejects playing the coin without spending the temporary mana", () => {
+    const result: AnalysisResult = {
+      snapshotRevision: "1",
+      summary: "空打幸运币",
+      warnings: [],
+      candidates: [
+        {
+          rank: 1,
+          actions: [
+            {
+              type: "play-card",
+              sourceEntityId: 11,
+              sourceCardId: "BAR_COIN1",
+              description: "打出幸运币",
+            },
+            {
+              type: "end-turn",
+              description: "结束回合",
+            },
+          ],
+          rationale: "错误地浪费资源",
+          risks: [],
+          confidence: 0.5,
+        },
+      ],
+    };
+
+    const report = validateAnalysisResult(
+      result,
+      {
+        ...snapshot,
+        self: {
+          ...snapshot.self,
+          hand: [
+            ...snapshot.self.hand,
+            { entityId: 11, cardId: "BAR_COIN1", cost: 0, tags: {} },
+          ],
+          handCount: 2,
+        },
+      },
+      catalog,
+    );
+
+    expect(report.ok).toBe(false);
+    expect(report.errors.join(" ")).toContain("没有使用获得的法力");
+  });
+
+  it("allows spending coin mana on a card one mana above the current total", () => {
+    const result: AnalysisResult = {
+      snapshotRevision: "1",
+      summary: "幸运币接三费牌",
+      warnings: [],
+      candidates: [
+        {
+          rank: 1,
+          actions: [
+            {
+              type: "play-card",
+              sourceEntityId: 11,
+              sourceCardId: "BAR_COIN1",
+              description: "打出幸运币",
+            },
+            {
+              type: "play-card",
+              sourceEntityId: 12,
+              sourceCardId: "CARD_003",
+              description: "打出三费测试卡",
+            },
+          ],
+          rationale: "使用临时法力完成出牌",
+          risks: [],
+          confidence: 0.8,
+        },
+      ],
+    };
+
+    const report = validateAnalysisResult(
+      result,
+      {
+        ...snapshot,
+        self: {
+          ...snapshot.self,
+          mana: 2,
+          maxMana: 2,
+          hand: [
+            { entityId: 11, cardId: "BAR_COIN1", cost: 0, tags: {} },
+            { entityId: 12, cardId: "CARD_003", cost: 3, tags: {} },
+          ],
+          handCount: 2,
         },
       },
       catalog,

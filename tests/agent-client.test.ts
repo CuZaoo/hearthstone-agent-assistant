@@ -20,6 +20,8 @@ describe("AgentClient", () => {
     const body = String(fetchMock.mock.calls[0]?.[1]?.body);
     expect(fetchMock.mock.calls[0]?.[0]).toBe("https://example.test/v1/responses");
     expect(body).toContain("测试文本");
+    expect(body).toContain("不得推荐");
+    expect(body).toContain("打出幸运币，然后结束回合");
     expect(body).not.toContain("不得发送");
     expect(body).not.toContain("secret-key");
   });
