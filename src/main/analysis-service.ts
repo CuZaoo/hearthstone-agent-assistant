@@ -1,4 +1,4 @@
-import { desktopCapturer, dialog } from "electron";
+import { dialog } from "electron";
 import { AgentClient } from "../core/agent-client.js";
 import { validateSnapshotForAnalysis } from "../core/analysis-validator.js";
 import type { CardCatalog } from "../core/card-catalog.js";
@@ -10,7 +10,10 @@ import type {
   GameStateSnapshot,
   VisualValidationReport,
 } from "../shared/types.js";
+import { snapshotSummary } from "./analysis-diagnostics.js";
+import { delay } from "./analysis-timing.js";
 import type { CredentialStore } from "./credential-store.js";
+import { captureHearthstoneWindow } from "./hearthstone-window-capture.js";
 import type { HistoryDatabase } from "./history-database.js";
 import { VisualValidator } from "./visual-validator.js";
 import type { WindowManager } from "./window-manager.js";
@@ -623,77 +626,4 @@ export class AnalysisService {
       }
     );
   }
-}
-
-async function captureHearthstoneWindow() {
-  const sources = await desktopCapturer.getSources({
-    types: ["window"],
-    thumbnailSize: { width: 2560, height: 1440 },
-    fetchWindowIcons: false,
-  });
-  const source = sources.find((entry) => /hearthstone|炉石传说/i.test(entry.name));
-  if (!source || source.thumbnail.isEmpty()) {
-    throw new Error("未找到炉石传说窗口，请使用窗口化或无边框模式。");
-  }
-  return source.thumbnail;
-}
-
-function delay(ms: number, signal: AbortSignal): Promise<void> {
-  if (signal.aborted) {
-    return Promise.reject(new DOMException("Aborted", "AbortError"));
-  }
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(resolve, ms);
-    signal.addEventListener(
-      "abort",
-      () => {
-        clearTimeout(timer);
-        reject(new DOMException("Aborted", "AbortError"));
-      },
-      { once: true },
-    );
-  });
-}
-
-function snapshotSummary(snapshot: GameStateSnapshot) {
-  return {
-    revision: snapshot.revision,
-    gameMode: snapshot.gameMode,
-    gameType: snapshot.gameType,
-    turn: snapshot.turn,
-    activePlayer: snapshot.activePlayer,
-    animationPending: snapshot.animationPending,
-    self: {
-      hero: snapshot.self.hero.name ?? snapshot.self.hero.cardId,
-      health: snapshot.self.hero.health,
-      mana: `${snapshot.self.mana}/${snapshot.self.maxMana}`,
-      hand: snapshot.self.hand.map((card) => ({
-        entityId: card.entityId,
-        cardId: card.cardId,
-        name: card.name,
-        cost: card.cost,
-      })),
-      board: snapshot.self.board.map(cardSummary),
-    },
-    opponent: {
-      hero: snapshot.opponent.hero.name ?? snapshot.opponent.hero.cardId,
-      health: snapshot.opponent.hero.health,
-      handCount: snapshot.opponent.handCount,
-      board: snapshot.opponent.board.map(cardSummary),
-    },
-    uncertainties: snapshot.uncertainties,
-  };
-}
-
-function cardSummary(card: GameStateSnapshot["self"]["board"][number]) {
-  return {
-    entityId: card.entityId,
-    cardId: card.cardId,
-    name: card.name,
-    cost: card.cost,
-    attack: card.attack,
-    health: card.health,
-    damage: card.damage,
-    exhausted: card.exhausted,
-  };
 }
