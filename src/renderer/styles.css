@@ -35,6 +35,11 @@
 
 * { box-sizing: border-box; }
 
+html, body, #root {
+  width: 100%;
+  min-height: 100%;
+}
+
 ::-webkit-scrollbar { width: 5px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: rgba(201, 160, 74, 0.1); border-radius: 999px; }
@@ -53,6 +58,7 @@ body {
     repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(139, 100, 50, 0.01) 2px, rgba(139, 100, 50, 0.01) 4px);
   font-synthesis: none;
   -webkit-font-smoothing: antialiased;
+  overflow: hidden;
 }
 
 button, input, select {
@@ -87,12 +93,16 @@ button, input, select {
 
 .app-shell {
   min-height: 100vh;
-  max-width: 960px;
-  margin: 0 auto;
-  padding: 16px;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  background: linear-gradient(180deg, #12100e 0%, #0f0d0a 100%);
+  overflow: hidden;
 }
 
 .dashboard {
+  min-height: 100vh;
+  width: 100%;
   border: none;
   border-radius: 0;
   background: linear-gradient(180deg, #12100e 0%, #0f0d0a 100%);
@@ -884,7 +894,7 @@ button, input, select {
 
 .overlay-shell {
   height: 100vh;
-  width: 100vw;
+  width: 100%;
   display: flex;
   align-items: stretch;
   justify-content: center;
@@ -895,7 +905,7 @@ button, input, select {
 .overlay-panel {
   width: 100%;
   min-height: 540px;
-  min-width: 420px;
+  min-width: 0;
   background: linear-gradient(180deg, #12100e 0%, #0f0d0a 100%);
   border: none;
   border-radius: 0;
