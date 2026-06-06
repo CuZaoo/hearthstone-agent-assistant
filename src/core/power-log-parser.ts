@@ -1,107 +1,40 @@
 import { createHash } from "node:crypto";
 import { emptyPlayerState } from "../shared/defaults.js";
 import type {
-  ActivePlayer,
   CardReference,
   GameEvent,
-  GameMode,
   GameStateSnapshot,
   PlayerSide,
 } from "../shared/types.js";
-
-type EntityTags = Record<string, number | string | boolean>;
-
-interface EntityState {
-  entityId: number;
-  cardId?: string;
-  name?: string;
-  controller?: number;
-  zone?: string;
-  zonePosition?: number;
-  tags: EntityTags;
-}
-
-interface ParserState {
-  entities: Map<number, EntityState>;
-  playerIds: Set<number>;
-  playerIdByEntityId: Map<number, number>;
-  playerEntityIdByPlayerId: Map<number, number>;
-  playerIdByName: Map<string, number>;
-  localAccountPlayerIds: Set<number>;
-  gameEntityId?: number;
-  selfPlayerId?: number;
-  opponentPlayerId?: number;
-  activePlayerId?: number;
-  currentEntityId?: number;
-  turn: number;
-  activePlayer: ActivePlayer;
-  gameMode: GameMode;
-  gameType?: string;
-  formatType?: string;
-  gameBuild?: number;
-  animationDepth: number;
-  visibleHistory: GameEvent[];
-  uncertainties: Set<string>;
-  processedEventIds: Set<string>;
-  processedEventIdQueue: string[];
-}
-
-const TAG_LINE =
-  /TAG_CHANGE Entity=(?:\[(?<entity>.*)\]|(?<simple>\d+)|(?<named>[^\s]+)) tag=(?<tag>[A-Z0-9_]+) value=(?<value>[^\s]+)/;
-const SHOW_LINE =
-  /SHOW_ENTITY - Updating Entity=(?:\[(?<entity>.*)\]|(?<simple>\d+)) CardID=(?<cardId>[A-Za-z0-9_]+)/;
-const FULL_LINE =
-  /FULL_ENTITY - (?:Creating ID=(?<id>\d+)|Updating \[(?<entity>.*)\]) CardID=(?<cardId>[A-Za-z0-9_]*)/;
-const PLAYER_LINE =
-  /Player EntityID=(?<entityId>\d+) PlayerID=(?<playerId>\d+) GameAccountId=\[hi=(?<hi>\d+) lo=(?<lo>\d+)\]/;
-const GAME_ENTITY_LINE = /GameEntity EntityID=(?<entityId>\d+)/;
-const DEBUG_GAME_TYPE = /DebugPrintGame\(\) - GameType=(?<gameType>[A-Z0-9_]+)/;
-const DEBUG_BUILD_NUMBER = /DebugPrintGame\(\) - BuildNumber=(?<build>\d+)/;
-const DEBUG_FORMAT_TYPE =
-  /DebugPrintGame\(\) - FormatType=(?<formatType>[A-Z0-9_]+)/;
-const DEBUG_PLAYER =
-  /DebugPrintGame\(\) - PlayerID=(?<playerId>\d+), PlayerName=(?<name>.+)$/;
-const UNKNOWN_PLAYER_NAME = /^UNKNOWN\b/;
-const ENTITY_TAG_LINE =
-  /(?:GameState|PowerTaskList)\.DebugPrintPower\(\) -\s+tag=(?<tag>[A-Z0-9_]+) value=(?<value>[^\s]+)/;
-const BLOCK_START = /BLOCK_START BlockType=(?<type>[A-Z_]+)/;
-const BLOCK_END = /BLOCK_END/;
-const CREATE_GAME = /CREATE_GAME/;
-const TIMESTAMP = /^D\s+(?<time>\d{2}:\d{2}:\d{2}\.\d+)\s+/;
-const ENTITY_DESCRIPTION =
-  /entityName=(?<name>.+?) id=(?<id>\d+) zone=(?<zone>[A-Z]+) zonePos=(?<zonePosition>\d+) cardId=(?<cardId>[A-Za-z0-9_]*) player=(?<controller>\d+)/g;
-const UNKNOWN_ENTITY_NAME = /^UNKNOWN ENTITY\b/;
-const RELEVANT_TAGS = new Set([
-  "ARMOR",
-  "ATK",
-  "CARDTYPE",
-  "CONTROLLER",
-  "COST",
-  "CURRENT_PLAYER",
-  "DAMAGE",
-  "DECK_COUNT",
-  "DIVINE_SHIELD",
-  "DORMANT",
-  "DURABILITY",
-  "EXHAUSTED",
-  "FATIGUE",
-  "FORMAT_TYPE",
-  "HEALTH",
-  "LIFESTEAL",
-  "OVERLOAD_LOCKED",
-  "PLAYER_ID",
-  "PLAYSTATE",
-  "POISONOUS",
-  "RESOURCES",
-  "RESOURCES_USED",
-  "SECRET",
-  "TAUNT",
-  "TEMP_RESOURCES",
-  "TRADEABLE",
-  "TURN",
-  "ZONE",
-  "ZONE_POSITION",
-]);
+import type { EntityState, ParserState } from "./power-log-model.js";
+import { newParserState } from "./power-log-model.js";
+import {
+  BLOCK_END,
+  BLOCK_START,
+  CREATE_GAME,
+  DEBUG_BUILD_NUMBER,
+  DEBUG_FORMAT_TYPE,
+  DEBUG_GAME_TYPE,
+  DEBUG_PLAYER,
+  ENTITY_DESCRIPTION,
+  ENTITY_TAG_LINE,
+  FULL_LINE,
+  GAME_ENTITY_LINE,
+  PLAYER_LINE,
+  SHOW_LINE,
+  TAG_LINE,
+  TIMESTAMP,
+  UNKNOWN_PLAYER_NAME,
+  byZonePosition,
+  isCardType,
+  isRelevantPowerLine,
+  isVisibleEventTag,
+  parseTagValue,
+  shouldInferSelfFromOptions,
+  shouldReadEntityDescriptionMetadata,
+  shouldReplaceName,
+  visibleEntityName,
+} from "./power-log-patterns.js";
 
 export class PowerLogParser {
   private state: ParserState = this.newState();
@@ -677,22 +610,7 @@ export class PowerLogParser {
   }
 
   private newState(): ParserState {
-    return {
-      entities: new Map(),
-      playerIds: new Set(),
-      playerIdByEntityId: new Map(),
-      playerEntityIdByPlayerId: new Map(),
-      playerIdByName: new Map(),
-      localAccountPlayerIds: new Set(),
-      turn: 0,
-      activePlayer: "unknown",
-      gameMode: "unknown",
-      animationDepth: 0,
-      visibleHistory: [],
-      uncertainties: new Set(),
-      processedEventIds: new Set(),
-      processedEventIdQueue: [],
-    };
+    return newParserState();
   }
 
   private startNewGame(): void {
@@ -736,83 +654,4 @@ export class PowerLogParser {
       this.state.gameMode = "unsupported";
     }
   }
-}
-
-function parseTagValue(value: string): number | string | boolean {
-  if (/^-?\d+$/.test(value)) {
-    return Number(value);
-  }
-  if (value === "true" || value === "false") {
-    return value === "true";
-  }
-  return value;
-}
-
-function isVisibleEventTag(tag: string): boolean {
-  return [
-    "ZONE",
-    "DAMAGE",
-    "ATK",
-    "HEALTH",
-    "ARMOR",
-    "EXHAUSTED",
-    "RESOURCES",
-    "OVERLOAD_LOCKED",
-  ].includes(tag);
-}
-
-function isRelevantPowerLine(line: string): boolean {
-  if (
-    !line.includes("DebugPrintPower()") &&
-    !line.includes("DebugPrintGame()")
-  ) {
-    return false;
-  }
-  const tagStart = line.indexOf(" tag=");
-  if (tagStart === -1) {
-    return true;
-  }
-  const valueStart = tagStart + 5;
-  const valueEnd = line.indexOf(" ", valueStart);
-  const tag = line.slice(valueStart, valueEnd === -1 ? undefined : valueEnd);
-  return RELEVANT_TAGS.has(tag);
-}
-
-function shouldReadEntityDescriptionMetadata(line: string): boolean {
-  return (
-    line.includes("TAG_CHANGE Entity=[") ||
-    line.includes("SHOW_ENTITY - Updating Entity=[") ||
-    line.includes("FULL_ENTITY - Updating [") ||
-    (line.includes("DebugPrintOptions()") &&
-      line.includes("mainEntity=[") &&
-      line.includes(" zone=HAND "))
-  );
-}
-
-function shouldInferSelfFromOptions(line: string): boolean {
-  return (
-    line.includes("DebugPrintOptions()") &&
-    line.includes("mainEntity=[") &&
-    line.includes(" zone=HAND ") &&
-    /cardId=[A-Za-z0-9_]+/.test(line)
-  );
-}
-
-function byZonePosition(a: CardReference, b: CardReference): number {
-  return (a.zonePosition ?? 0) - (b.zonePosition ?? 0);
-}
-
-function isCardType(entity: EntityState, name: string, numericValue: number): boolean {
-  return (
-    String(entity.tags.CARDTYPE) === name ||
-    Number(entity.tags.CARDTYPE) === numericValue
-  );
-}
-
-function shouldReplaceName(current: string | undefined, next: string): boolean {
-  return !current || (UNKNOWN_ENTITY_NAME.test(current) && !UNKNOWN_ENTITY_NAME.test(next));
-}
-
-function visibleEntityName(name: string | undefined): string | undefined {
-  return name && !UNKNOWN_ENTITY_NAME.test(name) ? name : undefined;
 }
