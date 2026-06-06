@@ -9,13 +9,15 @@ declare global {
     hearthstoneAgent: {
       getStatus(): Promise<AppStatus>;
       saveSettings(settings: AppSettings): Promise<AppStatus>;
-      setApiKey(apiKey: string): Promise<boolean>;
-      hasApiKey(): Promise<boolean>;
+      setApiKey(apiKey: string, agentId?: string): Promise<boolean>;
+      hasApiKey(agentId?: string): Promise<boolean>;
       analyze(): Promise<AppStatus>;
       testAgentConnection(): Promise<AppStatus>;
       toggleOverlay(): Promise<AppStatus>;
-      listHistory(): Promise<AnalysisResult[]>;
-      onStatusChanged(callback: (status: AppStatus) => void): () => void;
+    listHistory(): Promise<AnalysisResult[]>;
+    getLastAgentRequest(): Promise<any>;
+    stopAnalysis(): Promise<AppStatus>;
+    onStatusChanged(callback: (status: AppStatus) => void): () => void;
     };
   }
 }

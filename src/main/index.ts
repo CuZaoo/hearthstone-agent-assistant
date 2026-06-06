@@ -2,8 +2,10 @@ import {
   app,
   BrowserWindow,
   desktopCapturer,
+  dialog,
   globalShortcut,
   ipcMain,
+  Menu,
 } from "electron";
 import { existsSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
@@ -18,6 +20,7 @@ import type {
   AnalysisResult,
   AppSettings,
   AppStatus,
+  AgentProfile,
   GameStateSnapshot,
   LogStatus,
   VisualValidationReport,
@@ -53,6 +56,9 @@ let logStatus: LogStatus = {
 let visualValidation: VisualValidationReport | undefined;
 let busy = false;
 let statusMessage: string | undefined;
+let lastAutoAnalyzedRevision: string | undefined;
+let lastAgentRequestBody: unknown | undefined;
+let analysisAbortController: AbortController | undefined;
 
 const IPC = {
   getStatus: "app:get-status",
@@ -64,6 +70,8 @@ const IPC = {
   toggleOverlay: "app:toggle-overlay",
   listHistory: "app:list-history",
   statusChanged: "app:status-changed",
+  getLastAgentRequest: "app:get-last-agent-request",
+  stopAnalysis: "app:stop-analysis",
 } as const;
 
 app.whenReady().then(async () => {
@@ -84,6 +92,7 @@ app.whenReady().then(async () => {
     settings: diagnosticSettings(),
   });
 
+  Menu.setApplicationMenu(null);
   createWindows();
   registerIpc();
   registerShortcuts();
@@ -127,7 +136,7 @@ function createWindows(): void {
 
   overlayWindow = new BrowserWindow({
     width: 420,
-    height: 640,
+    height: 760,
     x: 24,
     y: 96,
     frame: false,
@@ -143,7 +152,6 @@ function createWindows(): void {
       sandbox: false,
     },
   });
-  overlayWindow.setIgnoreMouseEvents(true);
   mainWindow.on("closed", () => {
     mainWindow = undefined;
     app.quit();
@@ -171,13 +179,22 @@ function registerIpc(): void {
     await refreshCurrentLog();
     return getStatus();
   });
-  ipcMain.handle(IPC.hasApiKey, () => credentialStore.getApiKey().then(Boolean));
+  ipcMain.handle(IPC.hasApiKey, (_event, agentId?: string) =>
+    credentialStore.getApiKey(agentId ?? activeAgent().id).then(Boolean),
+  );
   ipcMain.handle(IPC.listHistory, () => historyDatabase.listAnalyses());
+  ipcMain.handle(IPC.getLastAgentRequest, () => lastAgentRequestBody);
+  ipcMain.handle(IPC.stopAnalysis, () => {
+    analysisAbortController?.abort();
+    statusMessage = "用户取消了分析。";
+    broadcastStatus();
+    return getStatus();
+  });
   ipcMain.handle(IPC.analyze, () => analyzeCurrentState());
   ipcMain.handle(IPC.testAgentConnection, () => testAgentConnection());
   ipcMain.handle(IPC.toggleOverlay, () => toggleOverlay());
-  ipcMain.handle(IPC.setApiKey, async (_event, apiKey: string) => {
-    await credentialStore.setApiKey(apiKey);
+  ipcMain.handle(IPC.setApiKey, async (_event, apiKey: string, agentId?: string) => {
+    await credentialStore.setApiKey(apiKey, agentId ?? activeAgent().id);
     return Boolean(apiKey.trim());
   });
   ipcMain.handle(
@@ -235,6 +252,17 @@ async function refreshWatcher(): Promise<void> {
     currentSnapshot = next;
     historyDatabase.saveSnapshot(next);
     broadcastStatus();
+    if (
+      settings.autoAnalyze &&
+      next.activePlayer === "self" &&
+      next.revision !== lastAutoAnalyzedRevision &&
+      !busy &&
+      settings.liveRecommendationsEnabled &&
+      settings.liveRecommendationsRiskAcceptedAt
+    ) {
+      lastAutoAnalyzedRevision = next.revision;
+      void analyzeCurrentState();
+    }
   });
   watcher.on("error", (error) => {
     logStatus = {
@@ -272,19 +300,25 @@ async function testAgentConnection(): Promise<AppStatus> {
   });
 
   try {
-    const apiKey = await credentialStore.getApiKey();
+    let agent = activeAgent();
+    let apiKey = await credentialStore.getApiKey(agent.id);
     if (!apiKey) {
-      throw new Error("尚未配置 Agent API Key。");
+      const fallback = await chooseFallbackAgent(agent, "尚未配置 Agent API Key。");
+      if (!fallback) {
+        throw new Error("尚未配置 Agent API Key。");
+      }
+      agent = fallback;
+      apiKey = fallback.apiKey;
     }
-    if (!settings.model) {
+    if (!agent.model) {
       throw new Error("尚未配置 Agent 模型名称。");
     }
     const client = new AgentClient(
       {
-        baseUrl: settings.baseUrl,
-        model: settings.model,
-        transport: settings.transport,
-        timeoutMs: settings.timeoutMs,
+        baseUrl: agent.baseUrl,
+        model: agent.model,
+        transport: agent.transport,
+        timeoutMs: agent.timeoutMs,
       },
       apiKey,
       catalog,
@@ -311,6 +345,8 @@ async function analyzeCurrentState(): Promise<AppStatus> {
     return getStatus();
   }
   const analysisStartedAt = Date.now();
+  analysisAbortController = new AbortController();
+  const cancelSignal = analysisAbortController.signal;
   busy = true;
   statusMessage = "正在读取并校验当前局面…";
   broadcastStatus();
@@ -320,12 +356,14 @@ async function analyzeCurrentState(): Promise<AppStatus> {
 
   try {
     assertLiveRecommendationsEnabled();
+    cancelSignal.throwIfAborted();
     await refreshCurrentLog();
     if (!currentSnapshot) {
       throw new Error("尚未从 Power.log 读取到有效局面。");
     }
     const snapshot = currentSnapshot;
     writeDiagnostic("analysis.snapshot", snapshotSummary(snapshot));
+    cancelSignal.throwIfAborted();
     const snapshotReport = validateSnapshotForAnalysis(snapshot, catalog);
     if (!snapshotReport.ok) {
       writeDiagnostic("analysis.snapshot_rejected", {
@@ -335,6 +373,7 @@ async function analyzeCurrentState(): Promise<AppStatus> {
       throw new Error(snapshotReport.errors.join("；"));
     }
 
+    cancelSignal.throwIfAborted();
     const screenshot = await captureHearthstoneWindow();
     visualValidation = new VisualValidator().validate(
       screenshot,
@@ -355,40 +394,47 @@ async function analyzeCurrentState(): Promise<AppStatus> {
       throw new Error("视觉校验期间局面已发生变化，请重新分析。");
     }
 
-    const apiKey = await credentialStore.getApiKey();
+    cancelSignal.throwIfAborted();
+    const agent = activeAgent();
+    const apiKey = await credentialStore.getApiKey(agent.id);
     if (!apiKey) {
       throw new Error("尚未配置 Agent API Key。");
     }
-    if (!settings.model) {
+    if (!agent.model) {
       throw new Error("尚未配置 Agent 模型名称。");
     }
 
-    statusMessage = "正在请求 Agent 分析…";
+    statusMessage = `正在请求 ${agent.name} 分析…`;
     broadcastStatus();
-    const remainingMs = settings.timeoutMs - (Date.now() - analysisStartedAt);
+    const remainingMs = agent.timeoutMs - (Date.now() - analysisStartedAt);
     if (remainingMs < 1_000) {
-      throw new Error(`分析准备阶段已超过 ${settings.timeoutMs}ms 总预算。`);
+      throw new Error(`分析准备阶段已超过 ${agent.timeoutMs}ms 总预算。`);
     }
-    const client = new AgentClient(
-      {
-        baseUrl: settings.baseUrl,
-        model: settings.model,
-        transport: settings.transport,
-        timeoutMs: remainingMs,
-      },
-      apiKey,
-      catalog,
-      diagnosticAgentEvent,
-    );
     const requestedRevision = snapshot.revision;
-    const result = await client.analyze({
+    const result = await requestAnalysisWithFallback({
+      agent,
+      apiKey,
       snapshot,
-      objective: "recommend-current-turn",
-      maxCandidates: settings.maxCandidates,
+      timeoutMs: remainingMs,
+      signal: cancelSignal,
     });
     if (currentSnapshot.revision !== requestedRevision) {
-      currentAnalysis = { ...result, stale: true };
-      throw new Error("局面已发生变化，本次建议已标记为过期。");
+      currentAnalysis = {
+        ...result,
+        stale: true,
+        warnings: [
+          ...result.warnings,
+          "局面已发生变化，本次建议基于旧快照，仅供回看。",
+        ],
+      };
+      historyDatabase.saveAnalysis(currentAnalysis);
+      statusMessage = "局面已发生变化，本次建议已显示为过期。";
+      writeDiagnostic("analysis.completed_stale", {
+        snapshotRevision: result.snapshotRevision,
+        currentRevision: currentSnapshot.revision,
+        candidateCount: result.candidates.length,
+      });
+      return getStatus();
     }
     currentAnalysis = result;
     historyDatabase.saveAnalysis(result);
@@ -400,15 +446,122 @@ async function analyzeCurrentState(): Promise<AppStatus> {
       warnings: result.warnings,
     });
   } catch (error) {
-    statusMessage = error instanceof Error ? error.message : "分析失败。";
+    if (error instanceof Error && error.name === "AbortError") {
+      statusMessage = "用户取消了分析。";
+    } else {
+      statusMessage = error instanceof Error ? error.message : "分析失败。";
+    }
     writeDiagnostic("analysis.failed", {
       error: statusMessage,
     });
   } finally {
     busy = false;
+    analysisAbortController = undefined;
     broadcastStatus();
   }
   return getStatus();
+}
+
+async function requestAnalysisWithFallback({
+  agent,
+  apiKey,
+  snapshot,
+  timeoutMs,
+  signal,
+}: {
+  agent: AgentProfile;
+  apiKey: string;
+  snapshot: GameStateSnapshot;
+  timeoutMs: number;
+  signal: AbortSignal;
+}): Promise<AnalysisResult> {
+  try {
+    return await requestAnalysisFromAgent(agent, apiKey, snapshot, timeoutMs, signal);
+  } catch (error) {
+    const originalMessage =
+      error instanceof Error ? error.message : `${agent.name} 分析失败。`;
+    const fallback = await chooseFallbackAgent(agent, originalMessage);
+    if (!fallback) {
+      throw error;
+    }
+    statusMessage = `正在切换到 ${fallback.name} 重新分析…`;
+    broadcastStatus();
+    return requestAnalysisFromAgent(
+      fallback,
+      fallback.apiKey,
+      snapshot,
+      timeoutMs,
+      signal,
+    );
+  }
+}
+
+async function requestAnalysisFromAgent(
+  agent: AgentProfile,
+  apiKey: string,
+  snapshot: GameStateSnapshot,
+  timeoutMs: number,
+  signal: AbortSignal,
+): Promise<AnalysisResult> {
+  const client = new AgentClient(
+    {
+      baseUrl: agent.baseUrl,
+      model: agent.model,
+      transport: agent.transport,
+      timeoutMs,
+    },
+    apiKey,
+    catalog,
+    diagnosticAgentEvent,
+  );
+  return client.analyze(
+    {
+      snapshot,
+      objective: "recommend-current-turn",
+      maxCandidates: settings.maxCandidates,
+    },
+    signal,
+  );
+}
+
+async function chooseFallbackAgent(
+  failedAgent: AgentProfile,
+  reason: string,
+): Promise<(AgentProfile & { apiKey: string }) | undefined> {
+  const candidates: Array<AgentProfile & { apiKey: string }> = [];
+  for (const agent of settings.agents) {
+    if (agent.id === failedAgent.id || !agent.model) {
+      continue;
+    }
+    const apiKey = await credentialStore.getApiKey(agent.id);
+    if (apiKey) {
+      candidates.push({ ...agent, apiKey });
+    }
+  }
+  const fallback = candidates[0];
+  if (!fallback) {
+    return undefined;
+  }
+  const dialogOptions: Electron.MessageBoxOptions = {
+    type: "warning",
+    buttons: [`使用 ${fallback.name}`, "取消"],
+    defaultId: 0,
+    cancelId: 1,
+    title: "Agent 分析失败",
+    message: `${failedAgent.name} 分析失败。是否切换到备用 Agent？`,
+    detail: reason,
+  };
+  const response = mainWindow
+    ? await dialog.showMessageBox(mainWindow, dialogOptions)
+    : await dialog.showMessageBox(dialogOptions);
+  if (response.response !== 0) {
+    return undefined;
+  }
+  settings = await settingsStore.save({
+    ...settings,
+    activeAgentId: fallback.id,
+  });
+  return fallback;
 }
 
 async function refreshCurrentLog(): Promise<void> {
@@ -487,6 +640,9 @@ function diagnosticAgentEvent({
   event: string;
   data?: Record<string, unknown>;
 }): void {
+  if (event === "agent.analysis.request_payload") {
+    lastAgentRequestBody = data?.body;
+  }
   writeDiagnostic(event, data ?? {});
 }
 
@@ -497,18 +653,35 @@ function writeDiagnostic(event: string, data: Record<string, unknown> = {}): voi
 }
 
 function diagnosticSettings() {
+  const agent = activeAgent();
   return {
     powerLogPath: settings.powerLogPath,
-    baseUrl: settings.baseUrl,
-    model: settings.model,
-    transport: settings.transport,
-    timeoutMs: settings.timeoutMs,
+    activeAgentId: agent.id,
+    agentName: agent.name,
+    baseUrl: agent.baseUrl,
+    model: agent.model,
+    transport: agent.transport,
+    timeoutMs: agent.timeoutMs,
     maxCandidates: settings.maxCandidates,
     liveRecommendationsEnabled: settings.liveRecommendationsEnabled,
     liveRecommendationsRiskAccepted: Boolean(
       settings.liveRecommendationsRiskAcceptedAt,
     ),
   };
+}
+
+function activeAgent(): AgentProfile {
+  return (
+    settings.agents.find((agent) => agent.id === settings.activeAgentId) ??
+    settings.agents[0] ?? {
+      id: "default",
+      name: "默认 Agent",
+      baseUrl: settings.baseUrl,
+      model: settings.model,
+      transport: settings.transport,
+      timeoutMs: settings.timeoutMs,
+    }
+  );
 }
 
 function snapshotSummary(snapshot: GameStateSnapshot) {

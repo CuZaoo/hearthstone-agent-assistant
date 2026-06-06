@@ -22,8 +22,38 @@ describe("AgentClient", () => {
     expect(body).toContain("测试文本");
     expect(body).toContain("不得推荐");
     expect(body).toContain("打出幸运币，然后结束回合");
+    expect(body).toContain("本地合法动作提示");
     expect(body).not.toContain("不得发送");
     expect(body).not.toContain("secret-key");
+  });
+
+  it("includes local playable action hints for coin turns", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(responseFor(validResult()));
+    const client = new AgentClient(settings, "secret-key", catalog);
+
+    await client.analyze({
+      ...request,
+      snapshot: {
+        ...snapshot,
+        self: {
+          ...snapshot.self,
+          mana: 2,
+          maxMana: 2,
+          hand: [
+            { entityId: 11, cardId: "BAR_COIN1", tags: {} },
+            { entityId: 12, cardId: "CARD_003", tags: {} },
+          ],
+          handCount: 2,
+        },
+      },
+    });
+
+    const body = String(fetchMock.mock.calls[0]?.[1]?.body);
+    expect(body).toContain("使用临时法力后才可打出的手牌");
+    expect(body).toContain("#12 三费测试卡(CARD_003, 3费)");
+    expect(body).toContain("临时法力牌：#11 幸运币(BAR_COIN1, 0费)");
   });
 
   it("retries once with local validation errors", async () => {
@@ -39,6 +69,44 @@ describe("AgentClient", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
     const repairBody = String(fetchMock.mock.calls[1]?.[1]?.body);
     expect(repairBody).toContain("不可用的己方实体");
+  });
+
+  it("returns displayable suggestions when only mana validation fails", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(responseFor(overBudgetResult()));
+    const client = new AgentClient(settings, "secret-key", catalog);
+
+    const result = await client.analyze({
+      ...request,
+      snapshot: {
+        ...snapshot,
+        self: {
+          ...snapshot.self,
+          mana: 2,
+          maxMana: 2,
+          hand: [{ entityId: 12, cardId: "CARD_003", tags: {} }],
+          handCount: 1,
+        },
+      },
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(result.summary).toBe("费用不足但可展示");
+    expect(result.warnings.join(" ")).toContain("本地校验提示");
+    expect(result.warnings.join(" ")).toContain("基础费用超过当前法力");
+  });
+
+  it("still retries hard invalid entity errors", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(responseFor(invalidResult()))
+      .mockResolvedValueOnce(responseFor(validResult()));
+    const client = new AgentClient(settings, "secret-key", catalog);
+
+    await client.analyze(request);
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it("tests responses transport with structured output", async () => {
@@ -225,6 +293,24 @@ const catalog = new CardCatalog({
       collectible: true,
       standard: true,
     },
+    {
+      cardId: "BAR_COIN1",
+      name: "幸运币",
+      text: "在本回合中，获得一个法力水晶。",
+      cost: 0,
+      cardType: "SPELL",
+      collectible: false,
+      standard: true,
+    },
+    {
+      cardId: "CARD_003",
+      name: "三费测试卡",
+      text: "测试三费文本",
+      cost: 3,
+      cardType: "SPELL",
+      collectible: true,
+      standard: true,
+    },
   ],
 });
 
@@ -310,6 +396,32 @@ function invalidResult() {
         rationale: "",
         risks: [],
         confidence: 0.5,
+      },
+    ],
+    warnings: [],
+  };
+}
+
+function overBudgetResult() {
+  return {
+    snapshotRevision: "1",
+    summary: "费用不足但可展示",
+    candidates: [
+      {
+        rank: 1,
+        actions: [
+          {
+            type: "play-card",
+            sourceEntityId: 12,
+            sourceCardId: "CARD_003",
+            targetEntityId: null,
+            targetSide: null,
+            description: "打出三费测试卡",
+          },
+        ],
+        rationale: "用户操作后可能已过期，但仍可展示思路",
+        risks: [],
+        confidence: 0.4,
       },
     ],
     warnings: [],

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type {
   AnalysisResult,
+  AgentProfile,
   AppSettings,
   AppStatus,
   ActivePlayer,
@@ -59,12 +60,27 @@ function Dashboard({ status }: { status: AppStatus }) {
   const [apiKey, setApiKey] = useState("");
   const [hasApiKey, setHasApiKey] = useState(false);
   const [history, setHistory] = useState<AnalysisResult[]>([]);
+  const [busyElapsed, setBusyElapsed] = useState(0);
+  const [agentRequest, setAgentRequest] = useState<any>();
+  const [requestOpen, setRequestOpen] = useState(false);
+  const activeAgent = getActiveAgent(settings);
 
   useEffect(() => setSettings(status.settings), [status.settings]);
   useEffect(() => {
-    void window.hearthstoneAgent.hasApiKey().then(setHasApiKey);
+    void window.hearthstoneAgent.hasApiKey(activeAgent.id).then(setHasApiKey);
     void window.hearthstoneAgent.listHistory().then(setHistory);
+  }, [status.analysis, activeAgent.id]);
+  useEffect(() => {
+    void window.hearthstoneAgent.getLastAgentRequest().then(setAgentRequest);
   }, [status.analysis]);
+  useEffect(() => {
+    if (!status.busy) {
+      setBusyElapsed(0);
+      return;
+    }
+    const id = setInterval(() => setBusyElapsed((t) => t + 1), 1000);
+    return () => clearInterval(id);
+  }, [status.busy]);
 
   const save = async () => {
     const acceptedAt =
@@ -77,9 +93,58 @@ function Dashboard({ status }: { status: AppStatus }) {
       liveRecommendationsRiskAcceptedAt: acceptedAt,
     });
     if (apiKey.trim()) {
-      setHasApiKey(await window.hearthstoneAgent.setApiKey(apiKey));
+      setHasApiKey(await window.hearthstoneAgent.setApiKey(apiKey, activeAgent.id));
       setApiKey("");
     }
+  };
+
+  const updateActiveAgent = (patch: Partial<AgentProfile>) => {
+    setSettings(updateAgent(settings, activeAgent.id, patch));
+  };
+
+  const switchAgent = (agentId: string) => {
+    const nextAgent = settings.agents.find((agent) => agent.id === agentId);
+    if (!nextAgent) {
+      return;
+    }
+    setSettings(syncLegacyAgentFields({ ...settings, activeAgentId: agentId }, nextAgent));
+    setApiKey("");
+  };
+
+  const addAgent = () => {
+    const nextAgent: AgentProfile = {
+      id: `agent-${Date.now()}`,
+      name: `Agent ${settings.agents.length + 1}`,
+      baseUrl: "http://127.0.0.1:8001",
+      model: "",
+      transport: "chat-completions",
+      timeoutMs: activeAgent.timeoutMs,
+    };
+    setSettings(syncLegacyAgentFields(
+      {
+        ...settings,
+        agents: [...settings.agents, nextAgent],
+        activeAgentId: nextAgent.id,
+      },
+      nextAgent,
+    ));
+    setApiKey("");
+  };
+
+  const removeActiveAgent = () => {
+    if (settings.agents.length <= 1) {
+      return;
+    }
+    const remaining = settings.agents.filter((agent) => agent.id !== activeAgent.id);
+    setSettings(syncLegacyAgentFields(
+      {
+        ...settings,
+        agents: remaining,
+        activeAgentId: remaining[0]?.id,
+      },
+      remaining[0],
+    ));
+    setApiKey("");
   };
 
   return (
@@ -94,13 +159,24 @@ function Dashboard({ status }: { status: AppStatus }) {
           <span className={status.busy ? "status-pill busy" : "status-pill"}>
             {status.busy ? "处理中" : "待命"}
           </span>
+          {status.busy && (
+            <span className="busy-timer">
+              <span>{busyElapsed}s</span>
+              <span className="busy-bar" />
+            </span>
+          )}
           <button className="primary" onClick={() => void window.hearthstoneAgent.analyze()}>
             {status.busy ? "分析中…" : "分析当前局面"}
           </button>
+          {status.busy && (
+            <button className="danger" onClick={() => void window.hearthstoneAgent.stopAnalysis()}>
+              停止分析
+            </button>
+          )}
         </div>
       </header>
 
-      <section className="status-grid">
+      <section className="status-grid animate-in">
         <StatusCard
           title="Power.log"
           ok={status.log.available}
@@ -136,9 +212,27 @@ function Dashboard({ status }: { status: AppStatus }) {
 
       <SnapshotPreview status={status} />
 
-      <section className="panel">
+      <section className="panel animate-in animate-in-d3">
         <h2>设置</h2>
         <div className="form-grid">
+          <Field label="当前 Agent">
+            <select
+              value={activeAgent.id}
+              onChange={(event) => switchAgent(event.target.value)}
+            >
+              {settings.agents.map((agent) => (
+                <option value={agent.id} key={agent.id}>
+                  {agent.name}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Agent 名称">
+            <input
+              value={activeAgent.name}
+              onChange={(event) => updateActiveAgent({ name: event.target.value })}
+            />
+          </Field>
           <Field label="Power.log 路径或炉石安装目录">
             <input
               value={settings.powerLogPath}
@@ -149,22 +243,22 @@ function Dashboard({ status }: { status: AppStatus }) {
           </Field>
           <Field label="接口地址">
             <input
-              value={settings.baseUrl}
+              value={activeAgent.baseUrl}
               onChange={(event) =>
-                setSettings({ ...settings, baseUrl: event.target.value })
+                updateActiveAgent({ baseUrl: event.target.value })
               }
             />
           </Field>
           <Field label="模型名称">
             <input
-              value={settings.model}
+              value={activeAgent.model}
               placeholder="由接口供应商提供"
               onChange={(event) =>
-                setSettings({ ...settings, model: event.target.value })
+                updateActiveAgent({ model: event.target.value })
               }
             />
           </Field>
-          <Field label={`API Key ${hasApiKey ? "（已保存）" : "（未保存）"}`}>
+          <Field label={`${activeAgent.name} API Key ${hasApiKey ? "（已保存）" : "（未保存）"}`}>
             <input
               type="password"
               value={apiKey}
@@ -174,10 +268,9 @@ function Dashboard({ status }: { status: AppStatus }) {
           </Field>
           <Field label="传输协议">
             <select
-              value={settings.transport}
+              value={activeAgent.transport}
               onChange={(event) =>
-                setSettings({
-                  ...settings,
+                updateActiveAgent({
                   transport: event.target.value as AppSettings["transport"],
                 })
               }
@@ -189,9 +282,9 @@ function Dashboard({ status }: { status: AppStatus }) {
           <Field label="超时（毫秒）">
             <input
               type="number"
-              value={settings.timeoutMs}
+              value={activeAgent.timeoutMs}
               onChange={(event) =>
-                setSettings({ ...settings, timeoutMs: Number(event.target.value) })
+                updateActiveAgent({ timeoutMs: Number(event.target.value) })
               }
             />
           </Field>
@@ -230,6 +323,21 @@ function Dashboard({ status }: { status: AppStatus }) {
           </span>
         </label>
 
+        <label className="risk-check" style={{ marginTop: 0 }}>
+          <input
+            type="checkbox"
+            checked={settings.autoAnalyze}
+            onChange={async (event) => {
+              const next = { ...settings, autoAnalyze: event.target.checked };
+              setSettings(next);
+              await window.hearthstoneAgent.saveSettings(next);
+            }}
+          />
+          <span>
+            自动分析：每当局面快照更新时（己方回合开始）自动发起 Agent 分析
+          </span>
+        </label>
+
         <div className="button-row">
           <button className="primary" onClick={() => void save()}>
             保存设置
@@ -240,10 +348,14 @@ function Dashboard({ status }: { status: AppStatus }) {
           <button onClick={() => void window.hearthstoneAgent.toggleOverlay()}>
             显示或隐藏悬浮窗
           </button>
+          <button onClick={addAgent}>新增 Agent</button>
+          <button onClick={removeActiveAgent} disabled={settings.agents.length <= 1}>
+            删除当前 Agent
+          </button>
         </div>
       </section>
 
-      <section className="panel">
+      <section className="panel animate-in animate-in-d4">
         <h2>最近分析</h2>
         {history.length === 0 ? (
           <p className="muted">暂无历史记录。</p>
@@ -256,6 +368,21 @@ function Dashboard({ status }: { status: AppStatus }) {
           ))
         )}
       </section>
+
+      {agentRequest && (
+        <section className="panel animate-in animate-in-d4">
+          <h2
+            className="collapsible-header"
+            onClick={() => setRequestOpen(!requestOpen)}
+          >
+            <span>最近 Agent 请求</span>
+            <span className="collapse-arrow">{requestOpen ? "▾" : "▸"}</span>
+          </h2>
+          {requestOpen && (
+            <pre className="request-block">{JSON.stringify(agentRequest, null, 2)}</pre>
+          )}
+        </section>
+      )}
     </main>
   );
 }
@@ -264,7 +391,7 @@ function SnapshotPreview({ status }: { status: AppStatus }) {
   const snapshot = status.snapshot;
   if (!snapshot) {
     return (
-      <section className="panel">
+      <section className="panel animate-in animate-in-d2">
         <h2>当前可见局面</h2>
         <p className="muted">等待 Power.log 产生对局事件。</p>
       </section>
@@ -272,7 +399,7 @@ function SnapshotPreview({ status }: { status: AppStatus }) {
   }
 
   return (
-    <section className="panel">
+    <section className="panel animate-in animate-in-d2">
       <h2>当前可见局面</h2>
       <div className="snapshot-meta">
         <span>回合 {snapshot.turn}</span>
@@ -342,30 +469,127 @@ function SnapshotColumn({
 
 function Overlay({ status }: { status: AppStatus }) {
   const analysis = status.analysis;
+  const [busyElapsed, setBusyElapsed] = useState(0);
+  const [history, setHistory] = useState<AnalysisResult[]>([]);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const activeAgent = getActiveAgent(status.settings);
+
+  useEffect(() => {
+    if (!status.busy) {
+      setBusyElapsed(0);
+      return;
+    }
+    const id = setInterval(() => setBusyElapsed((t) => t + 1), 1000);
+    return () => clearInterval(id);
+  }, [status.busy]);
+
+  useEffect(() => {
+    void window.hearthstoneAgent.listHistory().then(setHistory);
+  }, [status.analysis]);
+
+  const handleAnalyze = () => void window.hearthstoneAgent.analyze();
+  const switchOverlayAgent = async (agentId: string) => {
+    const nextAgent = status.settings.agents.find((agent) => agent.id === agentId);
+    if (!nextAgent) {
+      return;
+    }
+    await window.hearthstoneAgent.saveSettings(
+      syncLegacyAgentFields(
+        { ...status.settings, activeAgentId: agentId },
+        nextAgent,
+      ),
+    );
+  };
+
   return (
     <aside className="overlay-shell">
       <div className="overlay-header">
         <span>Agent 建议</span>
-        <span className={analysis?.stale ? "stale" : "live"}>
-          {analysis?.stale ? "已过期" : status.busy ? "分析中" : "当前"}
-        </span>
-      </div>
-      {!analysis ? (
-        <div className="overlay-empty">
-          <p>{status.message ?? "按 Ctrl+Shift+A 分析当前局面"}</p>
-          <small>Ctrl+Shift+O 显示或隐藏悬浮窗</small>
-        </div>
-      ) : (
-        <>
-          <p className="overlay-summary">{analysis.summary}</p>
-          {analysis.candidates.map((candidate) => (
-            <Candidate key={candidate.rank} candidate={candidate} />
-          ))}
-          {analysis.warnings.length > 0 && (
-            <div className="warnings">{analysis.warnings.join(" · ")}</div>
+        <div className="overlay-header-actions">
+          <select
+            className="agent-select-sm"
+            value={activeAgent.id}
+            onChange={(event) => void switchOverlayAgent(event.target.value)}
+            title="切换 Agent"
+          >
+            {status.settings.agents.map((agent) => (
+              <option value={agent.id} key={agent.id}>
+                {agent.name}
+              </option>
+            ))}
+          </select>
+          <button className="primary-sm" onClick={handleAnalyze} title="分析当前局面">
+            {status.busy ? "分析中" : "分析"}
+          </button>
+          {status.busy && (
+            <button className="danger-sm" onClick={() => void window.hearthstoneAgent.stopAnalysis()} title="停止分析">
+              停止
+            </button>
           )}
-        </>
-      )}
+          {status.busy && (
+            <span className="busy-timer">
+              <span>{busyElapsed}s</span>
+              <span className="busy-bar" />
+            </span>
+          )}
+          <span className={analysis?.stale ? "stale" : "live"}>
+            {analysis?.stale ? "已过期" : status.busy ? "分析中" : "当前"}
+          </span>
+        </div>
+      </div>
+      <div className="overlay-content">
+        {!analysis ? (
+          <div className="overlay-empty">
+            <p>{status.message ?? "按 Ctrl+Shift+A 分析当前局面"}</p>
+            <small>Ctrl+Shift+O 显示或隐藏悬浮窗</small>
+          </div>
+        ) : (
+          <>
+            <p className="overlay-summary">{analysis.summary}</p>
+            {analysis.candidates.map((candidate) => (
+              <Candidate key={candidate.rank} candidate={candidate} />
+            ))}
+            {analysis.warnings.length > 0 && (
+              <div className="warnings">{analysis.warnings.join(" · ")}</div>
+            )}
+          </>
+        )}
+
+        {history.length > 0 && (
+          <div className="overlay-history">
+            <div className="overlay-history-header">
+              <span>历史推荐</span>
+              <span>{history.length}</span>
+            </div>
+            {history.slice(0, 10).map((item) => {
+              const key = `${item.snapshotRevision}-${item.createdAt ?? ""}`;
+              const open = expandedId === key;
+              return (
+                <div
+                  key={key}
+                  className={`history-entry${open ? " expanded" : ""}`}
+                  onClick={() => setExpandedId(open ? null : key)}
+                >
+                  <div className="history-entry-title">
+                    <strong>{item.summary}</strong>
+                    <time>{item.createdAt ? new Date(item.createdAt).toLocaleString() : ""}</time>
+                  </div>
+                  {open && (
+                    <div className="history-entry-detail">
+                      {item.candidates.map((candidate) => (
+                        <Candidate key={candidate.rank} candidate={candidate} />
+                      ))}
+                      {item.warnings.length > 0 && (
+                        <div className="warnings">{item.warnings.join(" · ")}</div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
     </aside>
   );
 }
@@ -386,6 +610,51 @@ function Candidate({ candidate }: { candidate: CandidateLine }) {
       {candidate.risks.length > 0 && <small>风险：{candidate.risks.join("；")}</small>}
     </article>
   );
+}
+
+function getActiveAgent(settings: AppSettings): AgentProfile {
+  return (
+    settings.agents.find((agent) => agent.id === settings.activeAgentId) ??
+    settings.agents[0] ?? {
+      id: "default",
+      name: "默认 Agent",
+      baseUrl: settings.baseUrl,
+      model: settings.model,
+      transport: settings.transport,
+      timeoutMs: settings.timeoutMs,
+    }
+  );
+}
+
+function updateAgent(
+  settings: AppSettings,
+  agentId: string,
+  patch: Partial<AgentProfile>,
+): AppSettings {
+  const agents = settings.agents.map((agent) =>
+    agent.id === agentId ? { ...agent, ...patch } : agent,
+  );
+  const activeAgent = agents.find((agent) => agent.id === agentId);
+  return activeAgent
+    ? syncLegacyAgentFields({ ...settings, agents }, activeAgent)
+    : { ...settings, agents };
+}
+
+function syncLegacyAgentFields(
+  settings: AppSettings,
+  agent?: AgentProfile,
+): AppSettings {
+  if (!agent) {
+    return settings;
+  }
+  return {
+    ...settings,
+    activeAgentId: agent.id,
+    baseUrl: agent.baseUrl,
+    model: agent.model,
+    transport: agent.transport,
+    timeoutMs: agent.timeoutMs,
+  };
 }
 
 function activePlayerLabel(activePlayer: ActivePlayer) {

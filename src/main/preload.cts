@@ -15,20 +15,25 @@ const IPC = {
   toggleOverlay: "app:toggle-overlay",
   listHistory: "app:list-history",
   statusChanged: "app:status-changed",
+  getLastAgentRequest: "app:get-last-agent-request",
+  stopAnalysis: "app:stop-analysis",
 } as const;
 
 contextBridge.exposeInMainWorld("hearthstoneAgent", {
   getStatus: (): Promise<AppStatus> => ipcRenderer.invoke(IPC.getStatus),
   saveSettings: (settings: AppSettings): Promise<AppStatus> =>
     ipcRenderer.invoke(IPC.saveSettings, settings),
-  setApiKey: (apiKey: string): Promise<boolean> =>
-    ipcRenderer.invoke(IPC.setApiKey, apiKey),
-  hasApiKey: (): Promise<boolean> => ipcRenderer.invoke(IPC.hasApiKey),
+  setApiKey: (apiKey: string, agentId?: string): Promise<boolean> =>
+    ipcRenderer.invoke(IPC.setApiKey, apiKey, agentId),
+  hasApiKey: (agentId?: string): Promise<boolean> =>
+    ipcRenderer.invoke(IPC.hasApiKey, agentId),
   analyze: (): Promise<AppStatus> => ipcRenderer.invoke(IPC.analyze),
   testAgentConnection: (): Promise<AppStatus> =>
     ipcRenderer.invoke(IPC.testAgentConnection),
   toggleOverlay: (): Promise<AppStatus> => ipcRenderer.invoke(IPC.toggleOverlay),
   listHistory: (): Promise<AnalysisResult[]> => ipcRenderer.invoke(IPC.listHistory),
+  getLastAgentRequest: (): Promise<unknown> => ipcRenderer.invoke(IPC.getLastAgentRequest),
+  stopAnalysis: (): Promise<AppStatus> => ipcRenderer.invoke(IPC.stopAnalysis),
   onStatusChanged: (callback: (status: AppStatus) => void): (() => void) => {
     const listener = (_event: Electron.IpcRendererEvent, status: AppStatus) =>
       callback(status);

@@ -1,7 +1,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { DEFAULT_SETTINGS } from "../shared/defaults.js";
-import type { AppSettings } from "../shared/types.js";
+import type { AgentProfile, AppSettings } from "../shared/types.js";
 
 export class SettingsStore {
   constructor(private readonly path: string) {}
@@ -33,11 +33,50 @@ export class SettingsStore {
 }
 
 function normalizeSettings(settings: AppSettings): AppSettings {
+  const agents = normalizeAgents(settings);
+  const activeAgent =
+    agents.find((agent) => agent.id === settings.activeAgentId) ??
+    agents[0] ??
+    {
+      id: "default",
+      name: "默认 Agent",
+      baseUrl: DEFAULT_SETTINGS.baseUrl,
+      model: DEFAULT_SETTINGS.model,
+      transport: DEFAULT_SETTINGS.transport,
+      timeoutMs: DEFAULT_SETTINGS.timeoutMs,
+    };
   return {
     ...settings,
-    timeoutMs: Math.min(60_000, Math.max(1_000, settings.timeoutMs)),
+    agents,
+    activeAgentId: activeAgent.id,
+    baseUrl: activeAgent.baseUrl,
+    model: activeAgent.model,
+    transport: activeAgent.transport,
+    timeoutMs: activeAgent.timeoutMs,
     maxCandidates: Math.min(5, Math.max(1, settings.maxCandidates)),
-    baseUrl: settings.baseUrl.trim(),
-    model: settings.model.trim(),
   };
+}
+
+function normalizeAgents(settings: AppSettings): AgentProfile[] {
+  const sourceAgents =
+    Array.isArray(settings.agents) && settings.agents.length > 0
+      ? settings.agents
+      : [
+          {
+            id: "default",
+            name: "默认 Agent",
+            baseUrl: settings.baseUrl,
+            model: settings.model,
+            transport: settings.transport,
+            timeoutMs: settings.timeoutMs,
+          },
+        ];
+  return sourceAgents.map((agent, index) => ({
+    id: agent.id?.trim() || `agent-${index + 1}`,
+    name: agent.name?.trim() || `Agent ${index + 1}`,
+    baseUrl: agent.baseUrl.trim(),
+    model: agent.model.trim(),
+    transport: agent.transport,
+    timeoutMs: Math.min(60_000, Math.max(1_000, agent.timeoutMs)),
+  }));
 }

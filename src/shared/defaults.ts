@@ -5,6 +5,17 @@ export const DEFAULT_POWER_LOG_PATH =
 
 export const DEFAULT_SETTINGS: AppSettings = {
   powerLogPath: DEFAULT_POWER_LOG_PATH,
+  agents: [
+    {
+      id: "default",
+      name: "默认 Agent",
+      baseUrl: "https://api.openai.com",
+      model: "",
+      transport: "responses",
+      timeoutMs: 8_000,
+    },
+  ],
+  activeAgentId: "default",
   baseUrl: "https://api.openai.com",
   model: "",
   transport: "responses",
@@ -12,6 +23,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   maxCandidates: 3,
   overlayVisible: true,
   liveRecommendationsEnabled: false,
+  autoAnalyze: true,
 };
 
 export function emptyPlayerState(): PlayerState {

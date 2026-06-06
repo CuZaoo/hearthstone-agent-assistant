@@ -2,6 +2,7 @@ import type {
   AnalysisRequest,
   AnalysisResult,
   AppSettings,
+  CardReference,
 } from "../shared/types.js";
 import { validateAnalysisResult } from "./analysis-validator.js";
 import type { CardCatalog } from "./card-catalog.js";
@@ -145,7 +146,10 @@ export class AgentClient {
     }
   }
 
-  async analyze(request: AnalysisRequest): Promise<AnalysisResult> {
+  async analyze(
+    request: AnalysisRequest,
+    externalSignal?: AbortSignal,
+  ): Promise<AnalysisResult> {
     const safeRequest: AnalysisRequest = {
       ...request,
       snapshot: sanitizeSnapshotForAgent(request.snapshot, this.catalog),
@@ -172,6 +176,7 @@ export class AgentClient {
           safeRequest,
           repairErrors,
           remainingMs,
+          externalSignal,
         );
       } catch (error) {
         if (attempt === 0 && error instanceof Error) {
@@ -204,6 +209,17 @@ export class AgentClient {
           createdAt: new Date().toISOString(),
         };
       }
+      if (isDisplayableValidationFailure(report.errors)) {
+        return {
+          ...result,
+          warnings: [
+            ...result.warnings,
+            ...report.warnings,
+            `本地校验提示：${report.errors.join("；")}`,
+          ],
+          createdAt: new Date().toISOString(),
+        };
+      }
       this.emitDiagnostic("agent.analysis.validation_failed", {
         attempt: attempt + 1,
         errors: report.errors,
@@ -218,32 +234,40 @@ export class AgentClient {
     request: AnalysisRequest,
     repairErrors: string[],
     timeoutMs: number,
+    externalSignal?: AbortSignal,
   ): Promise<AnalysisResult> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
+    const combinedSignal = externalSignal
+      ? AbortSignal.any([controller.signal, externalSignal])
+      : controller.signal;
     try {
       const endpoint =
         this.settings.transport === "responses"
           ? "/v1/responses"
           : "/v1/chat/completions";
       const startedAt = Date.now();
-      const payload =
+      const body =
         this.settings.transport === "responses"
-          ? await this.postJson(
-              endpoint,
-              responsesPayload(this.settings.model, request, repairErrors),
-              controller.signal,
+          ? responsesPayload(
+              this.settings.model,
+              request,
+              repairErrors,
+              this.catalog,
             )
-          : await this.postJson(
-              endpoint,
-              chatCompletionsPayload(
-                this.settings.model,
-                request,
-                repairErrors,
-                "json_object",
-              ),
-              controller.signal,
+          : chatCompletionsPayload(
+              this.settings.model,
+              request,
+              repairErrors,
+              this.catalog,
+              "json_object",
             );
+      this.emitDiagnostic("agent.analysis.request_payload", {
+        transport: this.settings.transport,
+        model: this.settings.model,
+        body,
+      });
+      const payload = await this.postJson(endpoint, body, combinedSignal);
       const text =
         this.settings.transport === "responses"
           ? extractResponsesText(payload)
@@ -255,6 +279,9 @@ export class AgentClient {
       return parseAnalysisResult(text);
     } catch (error) {
       if (error instanceof Error && error.name === "AbortError") {
+        if (externalSignal?.aborted) {
+          throw new Error("用户取消了分析。");
+        }
         throw new Error(`Agent 请求超过 ${timeoutMs}ms。`);
       }
       throw error;
@@ -301,6 +328,20 @@ export class AgentClient {
   private emitDiagnostic(event: string, data: Record<string, unknown>): void {
     this.diagnostics?.({ event, data });
   }
+}
+
+function isDisplayableValidationFailure(errors: string[]): boolean {
+  return (
+    errors.length > 0 &&
+    errors.every((error) =>
+      [
+        "基础费用超过当前法力",
+        "基础费用高于当前法力",
+        "临时法力牌后没有使用获得的法力",
+        "会超过随从区容量",
+      ].some((pattern) => error.includes(pattern)),
+    )
+  );
 }
 
 function responsesConnectionTestPayload(model: string): object {
@@ -353,11 +394,12 @@ function responsesPayload(
   model: string,
   request: AnalysisRequest,
   repairErrors: string[],
+  catalog: CardCatalog,
 ): object {
   return {
     model,
     instructions: SYSTEM_PROMPT,
-    input: buildUserContent(request, repairErrors),
+    input: buildUserContent(request, repairErrors, catalog),
     text: {
       format: {
         type: "json_schema",
@@ -373,6 +415,7 @@ function chatCompletionsPayload(
   model: string,
   request: AnalysisRequest,
   repairErrors: string[],
+  catalog: CardCatalog,
   mode: StructuredOutputMode = "json_schema",
 ): object {
   return {
@@ -382,7 +425,7 @@ function chatCompletionsPayload(
     stream: false,
     messages: [
       { role: "system", content: SYSTEM_PROMPT },
-      { role: "user", content: buildUserContent(request, repairErrors, mode) },
+      { role: "user", content: buildUserContent(request, repairErrors, catalog, mode) },
     ],
     response_format:
       mode === "json_schema"
@@ -401,6 +444,7 @@ function chatCompletionsPayload(
 function buildUserContent(
   request: AnalysisRequest,
   repairErrors: string[],
+  catalog: CardCatalog,
   mode: StructuredOutputMode = "json_schema",
 ): string {
   const repair =
@@ -444,7 +488,85 @@ function buildUserContent(
 - sourceCardId 必须等于该 sourceEntityId 的 cardId；没有 cardId 时填 null。
 - description 不要复述或改写不存在的效果标签，只写卡名、动作和目标。
 - 不要为了“用掉资源”而打出幸运币；只有打出后能继续使用获得的本回合法力，才允许把幸运币放进路线。
+${buildLocalActionHints(request, catalog)}
 ${repair}${schema}\n${JSON.stringify(request)}`;
+}
+
+function buildLocalActionHints(
+  request: AnalysisRequest,
+  catalog: CardCatalog,
+): string {
+  const snapshot = request.snapshot;
+  const hand = snapshot.self.hand;
+  const currentMana = snapshot.self.mana;
+  const coinCards = hand.filter((card) => isTemporaryManaCard(card, catalog));
+  const directlyPlayable = hand.filter(
+    (card) => !isTemporaryManaCard(card, catalog) && cardCost(card, catalog) <= currentMana,
+  );
+  const coinPlayable =
+    coinCards.length > 0
+      ? hand.filter((card) => {
+          const cost = cardCost(card, catalog);
+          return (
+            !isTemporaryManaCard(card, catalog) &&
+            cost > currentMana &&
+            cost <= currentMana + coinCards.length
+          );
+        })
+      : [];
+  const attackers = snapshot.self.board.filter(
+    (card) =>
+      !card.exhausted &&
+      !card.dormant &&
+      (card.attack ?? 0) > 0,
+  );
+  const taunts = snapshot.opponent.board.filter((card) => card.taunt);
+  const heroCanAttack =
+    !snapshot.self.hero.exhausted &&
+    (snapshot.self.hero.attack ?? snapshot.self.weapon?.attack ?? 0) > 0;
+
+  return [
+    "本地合法动作提示：",
+    `- 当前法力：${snapshot.self.mana}/${snapshot.self.maxMana}；己方场面：${snapshot.self.board.length}/7；对手场面：${snapshot.opponent.board.length}/7。`,
+    `- 当前可直接打出的手牌：${formatCardList(directlyPlayable, catalog)}。`,
+    `- 使用临时法力后才可打出的手牌：${formatCardList(coinPlayable, catalog)}。`,
+    `- 临时法力牌：${formatCardList(coinCards, catalog)}；只有后续会立刻消费新增法力时才考虑。`,
+    `- 可攻击来源：${formatCardList(attackers, catalog)}${heroCanAttack ? "；己方英雄可攻击" : ""}。`,
+    `- 对手嘲讽：${formatCardList(taunts, catalog)}。若存在嘲讽，攻击目标必须优先为嘲讽。`,
+    "- 如果没有有价值动作，可以推荐直接结束回合；如果推荐保留资源，理由必须说明为什么优于当前可用动作。",
+  ].join("\n");
+}
+
+function formatCardList(cards: CardReference[], catalog: CardCatalog): string {
+  if (cards.length === 0) {
+    return "无";
+  }
+  return cards
+    .slice(0, 12)
+    .map((card) => {
+      const catalogEntry = catalog.get(card.cardId);
+      const name = catalogEntry?.name ?? card.name ?? card.cardId ?? "未知";
+      const cost = cardCost(card, catalog);
+      return `#${card.entityId} ${name}(${card.cardId ?? "无ID"}, ${cost}费)`;
+    })
+    .join("；");
+}
+
+function cardCost(card: CardReference, catalog: CardCatalog): number {
+  return card.cost ?? catalog.get(card.cardId)?.cost ?? 0;
+}
+
+function isTemporaryManaCard(card: CardReference, catalog: CardCatalog): boolean {
+  const catalogEntry = catalog.get(card.cardId);
+  const name = catalogEntry?.name ?? card.name ?? "";
+  const text = catalogEntry?.text ?? card.text ?? "";
+  const cardId = card.cardId ?? "";
+  return (
+    (catalogEntry?.cost ?? card.cost ?? 0) === 0 &&
+    (cardId.includes("COIN") ||
+      name === "幸运币" ||
+      /本回合.*法力|法力.*本回合/.test(text))
+  );
 }
 
 function extractResponsesText(payload: unknown): string {

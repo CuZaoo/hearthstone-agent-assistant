@@ -403,9 +403,12 @@ export class PowerLogParser {
     } else if (tag === "PLAYER_ID") {
       this.registerPlayer(entityId, Number(value));
     } else if (tag === "CURRENT_PLAYER") {
-      this.registerPlayer(entityId, this.playerIdForEntity(entityId));
-      if (Number(value) === 1) {
+      if (entityId === this.state.gameEntityId) {
+        this.state.activePlayerId = Number(value);
+      } else if (Number(value) === 1) {
         this.state.activePlayerId = this.playerIdForEntity(entityId);
+      }
+      if (this.state.activePlayerId !== undefined) {
         this.state.activePlayer =
           this.sideForPlayerId(this.state.activePlayerId) ?? "unknown";
       }

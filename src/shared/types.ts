@@ -125,6 +125,8 @@ export interface AnalysisResult {
 
 export interface AppSettings {
   powerLogPath: string;
+  agents: AgentProfile[];
+  activeAgentId?: string;
   baseUrl: string;
   model: string;
   transport: Transport;
@@ -133,6 +135,16 @@ export interface AppSettings {
   overlayVisible: boolean;
   liveRecommendationsEnabled: boolean;
   liveRecommendationsRiskAcceptedAt?: string;
+  autoAnalyze: boolean;
+}
+
+export interface AgentProfile {
+  id: string;
+  name: string;
+  baseUrl: string;
+  model: string;
+  transport: Transport;
+  timeoutMs: number;
 }
 
 export interface LogStatus {
