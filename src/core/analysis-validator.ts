@@ -110,7 +110,7 @@ export function validateCandidateLine(
   const usedSourceIds = new Set<number>();
   const unspentTemporaryManaSources: number[] = [];
   for (const [actionIndex, action] of candidate.actions.entries()) {
-    validateAction(action, snapshot, errors, warnings);
+    validateAction(action, snapshot, catalog, errors, warnings);
     if (
       action.sourceEntityId !== undefined &&
       action.type !== "attack" &&
@@ -199,6 +199,7 @@ function isTemporaryManaCard(card: CardReference, catalog: CardCatalog): boolean
 function validateAction(
   action: RecommendedAction,
   snapshot: GameStateSnapshot,
+  catalog: CardCatalog,
   errors: string[],
   warnings: string[],
 ): void {
@@ -267,6 +268,7 @@ function validateAction(
       );
     }
   }
+  validateActionDescription(action, source, catalog, errors);
 
   if (action.type === "play-card" && action.sourceEntityId === undefined) {
     errors.push("出牌动作必须引用己方手牌实体。");
@@ -346,5 +348,24 @@ function validateAction(
     ) {
       errors.push("结束回合动作不应引用实体或卡牌。");
     }
+  }
+}
+
+function validateActionDescription(
+  action: RecommendedAction,
+  source: { entityId: number; cardId?: string } | undefined,
+  catalog: CardCatalog,
+  errors: string[],
+): void {
+  if (action.type !== "attack" && /攻击(?!力)|打脸|踢脸/.test(action.description)) {
+    errors.push("非攻击动作的描述不应写成攻击。");
+  }
+  const sourceType = catalog.get(source?.cardId)?.cardType;
+  if (
+    action.type === "play-card" &&
+    sourceType === "SPELL" &&
+    /战吼/.test(action.description)
+  ) {
+    errors.push("法术出牌动作的描述不应写成战吼。");
   }
 }

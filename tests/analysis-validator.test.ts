@@ -190,6 +190,85 @@ describe("validateAnalysisResult", () => {
     expect(validateAnalysisResult(result, snapshot, catalog).ok).toBe(false);
   });
 
+  it("rejects play-card descriptions that are written as attacks", () => {
+    const result: AnalysisResult = {
+      snapshotRevision: "1",
+      summary: "描述错误",
+      warnings: [],
+      candidates: [
+        {
+          rank: 1,
+          actions: [
+            {
+              type: "play-card",
+              sourceEntityId: 10,
+              sourceCardId: "CARD_001",
+              targetEntityId: 42,
+              targetSide: "opponent",
+              description: "测试卡攻击树苗",
+            },
+          ],
+          rationale: "",
+          risks: [],
+          confidence: 0.5,
+        },
+      ],
+    };
+
+    const report = validateAnalysisResult(
+      result,
+      {
+        ...snapshot,
+        opponent: {
+          ...snapshot.opponent,
+          board: [
+            {
+              entityId: 42,
+              cardId: "AT_037t",
+              name: "树苗",
+              attack: 1,
+              health: 1,
+              tags: {},
+            },
+          ],
+        },
+      },
+      catalog,
+    );
+
+    expect(report.ok).toBe(false);
+    expect(report.errors.join(" ")).toContain("不应写成攻击");
+  });
+
+  it("rejects spell play-card descriptions that are written as battlecries", () => {
+    const result: AnalysisResult = {
+      snapshotRevision: "1",
+      summary: "法术描述错误",
+      warnings: [],
+      candidates: [
+        {
+          rank: 1,
+          actions: [
+            {
+              type: "play-card",
+              sourceEntityId: 10,
+              sourceCardId: "CARD_001",
+              description: "测试卡战吼消灭随从",
+            },
+          ],
+          rationale: "",
+          risks: [],
+          confidence: 0.5,
+        },
+      ],
+    };
+
+    const report = validateAnalysisResult(result, snapshot, catalog);
+
+    expect(report.ok).toBe(false);
+    expect(report.errors.join(" ")).toContain("法术出牌动作");
+  });
+
   it("rejects playable actions without the matching source card id", () => {
     const result: AnalysisResult = {
       snapshotRevision: "1",
