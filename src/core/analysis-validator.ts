@@ -281,6 +281,8 @@ function validateAction(
       errors.push(`出牌动作的实体 ${action.sourceEntityId} 不在己方手牌中。`);
     } else if ((card.cost ?? 0) > snapshot.self.mana) {
       warnings.push(`实体 ${action.sourceEntityId} 的基础费用高于当前法力。`);
+    } else {
+      validatePlayCardVisibleEffect(card, snapshot, catalog, errors);
     }
   }
 
@@ -348,6 +350,28 @@ function validateAction(
     ) {
       errors.push("结束回合动作不应引用实体或卡牌。");
     }
+  }
+}
+
+function validatePlayCardVisibleEffect(
+  card: CardReference,
+  snapshot: GameStateSnapshot,
+  catalog: CardCatalog,
+  errors: string[],
+): void {
+  const catalogEntry = catalog.get(card.cardId);
+  const name = catalogEntry?.name ?? card.name ?? card.cardId ?? `实体 ${card.entityId}`;
+  const text = catalogEntry?.text ?? card.text ?? "";
+  if (/随机敌方随从/.test(text) && snapshot.opponent.board.length === 0) {
+    errors.push(`${name} 需要可见敌方随从，但对手场面为空。`);
+  }
+  if (
+    /攻击力大于或等于5|攻击力大于等于5|攻击力.*>=\s*5/.test(text) &&
+    [...snapshot.self.board, ...snapshot.opponent.board].every(
+      (entity) => (entity.attack ?? 0) < 5,
+    )
+  ) {
+    errors.push(`${name} 当前没有可影响的 5 攻以上随从。`);
   }
 }
 

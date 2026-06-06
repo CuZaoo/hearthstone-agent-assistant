@@ -51,6 +51,24 @@ const catalog = new CardCatalog({
       collectible: false,
       standard: true,
     },
+    {
+      cardId: "TIME_433",
+      name: "抹除存在",
+      text: "<b>回溯</b>。<b>沉默</b>并消灭一个随机敌方随从。",
+      cost: 3,
+      cardType: "SPELL",
+      collectible: true,
+      standard: true,
+    },
+    {
+      cardId: "CORE_EX1_197",
+      name: "暗言术：毁",
+      text: "消灭所有攻击力大于或等于5的随从。",
+      cost: 4,
+      cardType: "SPELL",
+      collectible: true,
+      standard: true,
+    },
   ],
 });
 
@@ -267,6 +285,103 @@ describe("validateAnalysisResult", () => {
 
     expect(report.ok).toBe(false);
     expect(report.errors.join(" ")).toContain("法术出牌动作");
+  });
+
+  it("rejects random enemy minion spells when the opponent board is empty", () => {
+    const result: AnalysisResult = {
+      snapshotRevision: "1",
+      summary: "空场随机解",
+      warnings: [],
+      candidates: [
+        {
+          rank: 1,
+          actions: [
+            {
+              type: "play-card",
+              sourceEntityId: 12,
+              sourceCardId: "TIME_433",
+              description: "打出抹除存在",
+            },
+          ],
+          rationale: "",
+          risks: [],
+          confidence: 0.5,
+        },
+      ],
+    };
+
+    const report = validateAnalysisResult(
+      result,
+      {
+        ...snapshot,
+        self: {
+          ...snapshot.self,
+          mana: 3,
+          maxMana: 3,
+          hand: [{ entityId: 12, cardId: "TIME_433", cost: 3, tags: {} }],
+          handCount: 1,
+        },
+      },
+      catalog,
+    );
+
+    expect(report.ok).toBe(false);
+    expect(report.errors.join(" ")).toContain("对手场面为空");
+  });
+
+  it("rejects attack-threshold clears when no visible minion matches", () => {
+    const result: AnalysisResult = {
+      snapshotRevision: "1",
+      summary: "无效暗言术",
+      warnings: [],
+      candidates: [
+        {
+          rank: 1,
+          actions: [
+            {
+              type: "play-card",
+              sourceEntityId: 13,
+              sourceCardId: "CORE_EX1_197",
+              description: "打出暗言术：毁",
+            },
+          ],
+          rationale: "",
+          risks: [],
+          confidence: 0.5,
+        },
+      ],
+    };
+
+    const report = validateAnalysisResult(
+      result,
+      {
+        ...snapshot,
+        self: {
+          ...snapshot.self,
+          mana: 4,
+          maxMana: 4,
+          hand: [{ entityId: 13, cardId: "CORE_EX1_197", cost: 4, tags: {} }],
+          handCount: 1,
+        },
+        opponent: {
+          ...snapshot.opponent,
+          board: [
+            {
+              entityId: 42,
+              cardId: "AT_037t",
+              name: "树苗",
+              attack: 1,
+              health: 1,
+              tags: {},
+            },
+          ],
+        },
+      },
+      catalog,
+    );
+
+    expect(report.ok).toBe(false);
+    expect(report.errors.join(" ")).toContain("没有可影响的 5 攻以上随从");
   });
 
   it("rejects playable actions without the matching source card id", () => {
