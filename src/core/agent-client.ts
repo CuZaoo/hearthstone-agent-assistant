@@ -3,8 +3,12 @@ import type {
   AnalysisResult,
   AppSettings,
   CardReference,
+  GameStateSnapshot,
 } from "../shared/types.js";
-import { validateAnalysisResult } from "./analysis-validator.js";
+import {
+  validateAnalysisResult,
+  validateCandidateLine,
+} from "./analysis-validator.js";
 import type { CardCatalog } from "./card-catalog.js";
 import { sanitizeSnapshotForAgent } from "./snapshot-sanitizer.js";
 
@@ -209,6 +213,24 @@ export class AgentClient {
           createdAt: new Date().toISOString(),
         };
       }
+      const salvage = salvageValidCandidates(
+        result,
+        request.snapshot,
+        this.catalog,
+        request.maxCandidates,
+      );
+      if (salvage) {
+        this.emitDiagnostic("agent.analysis.salvaged_candidates", {
+          attempt: attempt + 1,
+          keptCandidates: salvage.candidates.length,
+          originalCandidates: result.candidates.length,
+          validationErrors: report.errors,
+        });
+        return {
+          ...salvage,
+          createdAt: new Date().toISOString(),
+        };
+      }
       if (isDisplayableValidationFailure(report.errors)) {
         return {
           ...result,
@@ -328,6 +350,63 @@ export class AgentClient {
   private emitDiagnostic(event: string, data: Record<string, unknown>): void {
     this.diagnostics?.({ event, data });
   }
+}
+
+function salvageValidCandidates(
+  result: AnalysisResult,
+  snapshot: GameStateSnapshot,
+  catalog: CardCatalog,
+  maxCandidates: number,
+): AnalysisResult | undefined {
+  if (
+    result.snapshotRevision !== snapshot.revision ||
+    result.candidates.length === 0
+  ) {
+    return undefined;
+  }
+
+  const reports = result.candidates.map((candidate) => ({
+    candidate,
+    report: validateCandidateLine(candidate, snapshot, catalog),
+  }));
+  const validCandidates = reports
+    .filter((entry) => entry.report.ok)
+    .map((entry) => entry.candidate);
+  if (validCandidates.length === 0) {
+    return undefined;
+  }
+
+  const invalidReports = reports.filter((entry) => !entry.report.ok);
+  const keptCandidates = validCandidates
+    .slice(0, maxCandidates)
+    .map((candidate, index) => ({
+      ...candidate,
+      rank: index + 1,
+    }));
+  const warningParts = [
+    ...reports.flatMap((entry) => entry.report.warnings),
+  ];
+  if (invalidReports.length > 0) {
+    warningParts.push(
+      `已丢弃 ${invalidReports.length} 条未通过本地校验的路线：${invalidReports
+        .map(
+          (entry) =>
+            `路线 ${entry.candidate.rank} ${entry.report.errors.join("；")}`,
+        )
+        .join("；")}`,
+    );
+  }
+  if (validCandidates.length > keptCandidates.length) {
+    warningParts.push(
+      `Agent 返回路线超过上限，已只保留前 ${maxCandidates} 条可用路线。`,
+    );
+  }
+
+  return {
+    ...result,
+    candidates: keptCandidates,
+    warnings: [...result.warnings, ...warningParts],
+  };
 }
 
 function isDisplayableValidationFailure(errors: string[]): boolean {

@@ -158,6 +158,22 @@ describe("AgentClient", () => {
     expect(result.warnings.join(" ")).toContain("基础费用超过当前法力");
   });
 
+  it("keeps valid candidates when another route fails validation", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(responseFor(mixedValidityResult()));
+    const client = new AgentClient(settings, "secret-key", catalog);
+
+    const result = await client.analyze(request);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(result.candidates).toHaveLength(1);
+    expect(result.candidates[0]?.rank).toBe(1);
+    expect(result.candidates[0]?.rationale).toBe("保留资源");
+    expect(result.warnings.join(" ")).toContain("已丢弃 1 条未通过本地校验的路线");
+    expect(result.warnings.join(" ")).toContain("不可用的己方实体");
+  });
+
   it("still retries hard invalid entity errors", async () => {
     const fetchMock = vi
       .spyOn(globalThis, "fetch")
@@ -516,6 +532,48 @@ function overBudgetResult() {
         rationale: "用户操作后可能已过期，但仍可展示思路",
         risks: [],
         confidence: 0.4,
+      },
+    ],
+    warnings: [],
+  };
+}
+
+function mixedValidityResult() {
+  return {
+    snapshotRevision: "1",
+    summary: "部分路线可用",
+    candidates: [
+      {
+        rank: 1,
+        actions: [
+          {
+            type: "play-card",
+            sourceEntityId: 999,
+            sourceCardId: "CARD_001",
+            targetEntityId: null,
+            targetSide: null,
+            description: "打出不存在的牌",
+          },
+        ],
+        rationale: "错误路线",
+        risks: [],
+        confidence: 0.5,
+      },
+      {
+        rank: 2,
+        actions: [
+          {
+            type: "end-turn",
+            sourceEntityId: null,
+            sourceCardId: null,
+            targetEntityId: null,
+            targetSide: null,
+            description: "结束回合",
+          },
+        ],
+        rationale: "保留资源",
+        risks: [],
+        confidence: 0.5,
       },
     ],
     warnings: [],

@@ -1,5 +1,6 @@
 import type {
   AnalysisResult,
+  CandidateLine,
   CardReference,
   GameStateSnapshot,
   RecommendedAction,
@@ -85,83 +86,98 @@ export function validateAnalysisResult(
   }
 
   for (const candidate of result.candidates) {
-    if (candidate.confidence < 0 || candidate.confidence > 1) {
-      errors.push(`路线 ${candidate.rank} 的置信度必须在 0 到 1 之间。`);
-    }
-    let remainingMana = snapshot.self.mana;
-    let boardCount = snapshot.self.board.length;
-    const usedSourceIds = new Set<number>();
-    const unspentTemporaryManaSources: number[] = [];
-    for (const [actionIndex, action] of candidate.actions.entries()) {
-      validateAction(action, snapshot, errors, warnings);
-      if (
-        action.sourceEntityId !== undefined &&
-        action.type !== "attack" &&
-        usedSourceIds.has(action.sourceEntityId)
-      ) {
-        errors.push(
-          `路线 ${candidate.rank} 重复使用了实体 ${action.sourceEntityId}。`,
-        );
-      }
-      if (action.sourceEntityId !== undefined && action.type !== "attack") {
-        usedSourceIds.add(action.sourceEntityId);
-      }
-      if (action.type === "play-card" && action.sourceEntityId !== undefined) {
-        const card = snapshot.self.hand.find(
-          (entry) => entry.entityId === action.sourceEntityId,
-        );
-        const catalogEntry = catalog.get(card?.cardId);
-        const cost = card?.cost ?? catalogEntry?.cost ?? 0;
-        remainingMana -= cost;
-        if (remainingMana < 0) {
-          errors.push(`路线 ${candidate.rank} 的基础费用超过当前法力。`);
-        }
-        if (card && isTemporaryManaCard(card, catalog)) {
-          remainingMana += 1;
-          unspentTemporaryManaSources.push(card.entityId);
-        } else if (cost > 0 && unspentTemporaryManaSources.length > 0) {
-          unspentTemporaryManaSources.pop();
-        }
-        if (
-          catalogEntry?.cardType === "MINION" ||
-          catalogEntry?.cardType === "LOCATION"
-        ) {
-          boardCount += 1;
-          if (boardCount > 7) {
-            errors.push(`路线 ${candidate.rank} 会超过随从区容量。`);
-          }
-        }
-      }
-      if (action.type === "hero-power") {
-        remainingMana -= snapshot.self.heroPower?.cost ?? 2;
-        if (remainingMana < 0) {
-          errors.push(`路线 ${candidate.rank} 的基础费用超过当前法力。`);
-        }
-        if (unspentTemporaryManaSources.length > 0) {
-          unspentTemporaryManaSources.pop();
-        }
-      }
-      if (action.type === "trade") {
-        remainingMana -= 1;
-        if (remainingMana < 0) {
-          errors.push(`路线 ${candidate.rank} 的基础费用超过当前法力。`);
-        }
-        if (unspentTemporaryManaSources.length > 0) {
-          unspentTemporaryManaSources.pop();
-        }
-      }
-      if (
-        action.type === "end-turn" &&
-        actionIndex !== candidate.actions.length - 1
-      ) {
-        errors.push(`路线 ${candidate.rank} 在结束回合后仍包含动作。`);
-      }
-    }
-    if (unspentTemporaryManaSources.length > 0) {
+    const candidateReport = validateCandidateLine(candidate, snapshot, catalog);
+    errors.push(...candidateReport.errors);
+    warnings.push(...candidateReport.warnings);
+  }
+
+  return { ok: errors.length === 0, errors, warnings };
+}
+
+export function validateCandidateLine(
+  candidate: CandidateLine,
+  snapshot: GameStateSnapshot,
+  catalog: CardCatalog,
+): ValidationReport {
+  const errors: string[] = [];
+  const warnings: string[] = [];
+
+  if (candidate.confidence < 0 || candidate.confidence > 1) {
+    errors.push(`路线 ${candidate.rank} 的置信度必须在 0 到 1 之间。`);
+  }
+  let remainingMana = snapshot.self.mana;
+  let boardCount = snapshot.self.board.length;
+  const usedSourceIds = new Set<number>();
+  const unspentTemporaryManaSources: number[] = [];
+  for (const [actionIndex, action] of candidate.actions.entries()) {
+    validateAction(action, snapshot, errors, warnings);
+    if (
+      action.sourceEntityId !== undefined &&
+      action.type !== "attack" &&
+      usedSourceIds.has(action.sourceEntityId)
+    ) {
       errors.push(
-        `路线 ${candidate.rank} 打出临时法力牌后没有使用获得的法力。`,
+        `路线 ${candidate.rank} 重复使用了实体 ${action.sourceEntityId}。`,
       );
     }
+    if (action.sourceEntityId !== undefined && action.type !== "attack") {
+      usedSourceIds.add(action.sourceEntityId);
+    }
+    if (action.type === "play-card" && action.sourceEntityId !== undefined) {
+      const card = snapshot.self.hand.find(
+        (entry) => entry.entityId === action.sourceEntityId,
+      );
+      const catalogEntry = catalog.get(card?.cardId);
+      const cost = card?.cost ?? catalogEntry?.cost ?? 0;
+      remainingMana -= cost;
+      if (remainingMana < 0) {
+        errors.push(`路线 ${candidate.rank} 的基础费用超过当前法力。`);
+      }
+      if (card && isTemporaryManaCard(card, catalog)) {
+        remainingMana += 1;
+        unspentTemporaryManaSources.push(card.entityId);
+      } else if (cost > 0 && unspentTemporaryManaSources.length > 0) {
+        unspentTemporaryManaSources.pop();
+      }
+      if (
+        catalogEntry?.cardType === "MINION" ||
+        catalogEntry?.cardType === "LOCATION"
+      ) {
+        boardCount += 1;
+        if (boardCount > 7) {
+          errors.push(`路线 ${candidate.rank} 会超过随从区容量。`);
+        }
+      }
+    }
+    if (action.type === "hero-power") {
+      remainingMana -= snapshot.self.heroPower?.cost ?? 2;
+      if (remainingMana < 0) {
+        errors.push(`路线 ${candidate.rank} 的基础费用超过当前法力。`);
+      }
+      if (unspentTemporaryManaSources.length > 0) {
+        unspentTemporaryManaSources.pop();
+      }
+    }
+    if (action.type === "trade") {
+      remainingMana -= 1;
+      if (remainingMana < 0) {
+        errors.push(`路线 ${candidate.rank} 的基础费用超过当前法力。`);
+      }
+      if (unspentTemporaryManaSources.length > 0) {
+        unspentTemporaryManaSources.pop();
+      }
+    }
+    if (
+      action.type === "end-turn" &&
+      actionIndex !== candidate.actions.length - 1
+    ) {
+      errors.push(`路线 ${candidate.rank} 在结束回合后仍包含动作。`);
+    }
+  }
+  if (unspentTemporaryManaSources.length > 0) {
+    errors.push(
+      `路线 ${candidate.rank} 打出临时法力牌后没有使用获得的法力。`,
+    );
   }
 
   return { ok: errors.length === 0, errors, warnings };
