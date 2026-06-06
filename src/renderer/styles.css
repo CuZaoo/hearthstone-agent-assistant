@@ -330,6 +330,27 @@ button, input, select {
   font-weight: 600;
 }
 
+.dossier .turn-item {
+  border-radius: 999px;
+  margin: 0 8px;
+  padding: 2px 10px;
+  border-right: none;
+  background: rgba(201, 160, 74, 0.06);
+}
+.dossier .turn-item.self-turn .val { color: var(--green); }
+.dossier .turn-item.opponent-turn .val { color: var(--red); }
+.dossier .turn-item.unknown-turn .val { color: var(--amber); }
+
+.dossier .agent-item {
+  min-width: 0;
+  max-width: 190px;
+}
+.dossier .agent-item .val {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .dossier .item .dot {
   width: 5px;
   height: 5px;
@@ -988,6 +1009,23 @@ button, input, select {
   color: var(--red);
   flex-shrink: 0;
 }
+.overlay-panel .ol-header .ol-agent-pill,
+.overlay-panel .ol-header .ol-turn {
+  max-width: 120px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  border: 1px solid rgba(201, 160, 74, 0.1);
+  background: rgba(201, 160, 74, 0.05);
+  color: var(--text-secondary);
+  font-size: 9px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex-shrink: 0;
+}
+.overlay-panel .ol-header .ol-turn.self-turn { color: var(--green); border-color: rgba(104, 193, 138, 0.18); }
+.overlay-panel .ol-header .ol-turn.opponent-turn { color: var(--red); border-color: rgba(213, 108, 97, 0.18); }
+.overlay-panel .ol-header .ol-turn.unknown-turn { color: var(--amber); }
 
 /* summary banner */
 .overlay-panel .ol-summary {
@@ -1274,6 +1312,22 @@ button, input, select {
   color: var(--red);
   flex-shrink: 0;
 }
+.ol-ticker .ticker-meta {
+  max-width: 160px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(201, 160, 74, 0.06);
+  border: 1px solid rgba(201, 160, 74, 0.1);
+  color: var(--text-secondary);
+  font-size: 9px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex-shrink: 0;
+}
+.ol-ticker .ticker-meta.self-turn { color: var(--green); border-color: rgba(104, 193, 138, 0.18); }
+.ol-ticker .ticker-meta.opponent-turn { color: var(--red); border-color: rgba(213, 108, 97, 0.18); }
+.ol-ticker .ticker-meta.unknown-turn { color: var(--amber); }
 .ol-ticker .ticker-actions {
   display: flex;
   align-items: center;

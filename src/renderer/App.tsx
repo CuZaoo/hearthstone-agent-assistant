@@ -136,6 +136,13 @@ function Dashboard({ status }: { status: AppStatus }) {
 
   const snapshot = status.snapshot;
   const analysis = status.analysis;
+  const turnLabel = turnOwnerLabel(snapshot?.activePlayer);
+  const turnClass = turnOwnerClass(snapshot?.activePlayer);
+  const handleCloseWindow = () => {
+    if (window.confirm("确认关闭主界面并退出应用？")) {
+      void window.hearthstoneAgent.closeWindow();
+    }
+  };
 
   return (
     <div className="app-shell">
@@ -163,17 +170,19 @@ function Dashboard({ status }: { status: AppStatus }) {
             <div className="window-controls">
               <button className="wc-btn wc-minimize" onClick={() => void window.hearthstoneAgent.minimizeWindow()} title="最小化">—</button>
               <button className="wc-btn wc-maximize" onClick={() => void window.hearthstoneAgent.maximizeWindow()} title="最大化">□</button>
-              <button className="wc-btn wc-close" onClick={() => void window.hearthstoneAgent.closeWindow()} title="关闭">×</button>
+              <button className="wc-btn wc-close" onClick={handleCloseWindow} title="关闭">×</button>
             </div>
           </div>
         </header>
 
         {/* Dossier */}
         <div className="dossier">
-          <span className="item"><span className="dot green" /> <span className="val">Power.log</span> {status.log.available ? "已连接" : "未连接"}</span>
+          <span className="item"><span className={`dot ${status.log.available ? "green" : "red"}`} /> <span className="val">局面采集</span> {status.log.available ? "已连接" : "未连接"}</span>
           <span className="item">📜 卡牌 <span className="val">{status.catalog.entryCount ?? "—"}</span></span>
           {snapshot && <span className="item">⚔️ 回合 <span className="val">{snapshot.turn}</span></span>}
+          <span className={`item turn-item ${turnClass}`}>当前 <span className="val">{turnLabel}</span></span>
           {snapshot && <span className="item">⚡ <span className="val">{snapshot.self.mana}</span>/{snapshot.self.maxMana}</span>}
+          <span className="item agent-item">Agent <span className="val">{activeAgent.name}</span></span>
           {status.visualValidation && (
             <span className="item">
               <span className={`dot ${status.visualValidation.ok ? "green" : status.visualValidation.errors.length > 0 ? "red" : "amber"}`} />
@@ -338,6 +347,9 @@ function Dashboard({ status }: { status: AppStatus }) {
 function OverlayBar({ status }: { status: AppStatus }) {
   const analysis = status.analysis;
   const candidates = analysis?.candidates ?? [];
+  const activeAgent = getActiveAgent(status.settings);
+  const turnLabel = turnOwnerLabel(status.snapshot?.activePlayer);
+  const turnClass = turnOwnerClass(status.snapshot?.activePlayer);
   const [busyElapsed, setBusyElapsed] = useState(0);
   const [compact, setCompact] = useState(false);
   const [tickerIdx, setTickerIdx] = useState(0);
@@ -373,7 +385,7 @@ function OverlayBar({ status }: { status: AppStatus }) {
           {status.busy ? (
             <span className="ticker-text">分析中… {busyElapsed}s</span>
           ) : !analysis ? (
-            <span className="ticker-text">{status.message ?? "按 Ctrl+Shift+A"}</span>
+            <span className="ticker-text">{turnLabel} · {activeAgent.name} · {status.message ?? "按 Ctrl+Shift+A"}</span>
           ) : ticker ? (
             <div
               className="ticker-body"
@@ -408,6 +420,7 @@ function OverlayBar({ status }: { status: AppStatus }) {
           )}
 
           {analysis?.stale && <span className="ticker-stale">已过期</span>}
+          <span className={`ticker-meta ${turnClass}`}>{turnLabel} · {activeAgent.name}</span>
 
           <div className="ticker-actions">
             <button className={`btn-gold${status.busy ? " loading" : ""}`} onClick={() => void window.hearthstoneAgent.analyze()} disabled={status.busy}>
@@ -438,13 +451,13 @@ function OverlayBar({ status }: { status: AppStatus }) {
             <>
               <span className="ol-title">
                 参谋分析
-                {candidates[0] && extractAgentPrefix(candidates[0].rationale) && (
-                  <span className="ol-agent"> · {extractAgentPrefix(candidates[0].rationale)}</span>
-                )}
+                <span className="ol-agent"> · {activeAgent.name}</span>
               </span>
               {analysis.stale && <span className="ol-stale">已过期</span>}
             </>
           )}
+          <span className="ol-agent-pill">Agent · {activeAgent.name}</span>
+          <span className={`ol-turn ${turnClass}`}>{turnLabel}</span>
         </div>
 
         {/* Body */}
@@ -742,6 +755,18 @@ function cardTitle(card: CardReference): string {
 
 function cardCost(card: CardReference): number {
   return card.cost ?? 0;
+}
+
+function turnOwnerLabel(activePlayer?: ActivePlayer): string {
+  if (activePlayer === "self") return "己方回合";
+  if (activePlayer === "opponent") return "对手回合";
+  return "回合未知";
+}
+
+function turnOwnerClass(activePlayer?: ActivePlayer): string {
+  if (activePlayer === "self") return "self-turn";
+  if (activePlayer === "opponent") return "opponent-turn";
+  return "unknown-turn";
 }
 
 function extractAgentLabel(rationale: string): string {
