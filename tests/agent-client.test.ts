@@ -51,9 +51,70 @@ describe("AgentClient", () => {
     });
 
     const body = String(fetchMock.mock.calls[0]?.[1]?.body);
+    const input = JSON.parse(body).input as string;
     expect(body).toContain("使用临时法力后才可打出的手牌");
     expect(body).toContain("#12 三费测试卡(CARD_003, 3费)");
     expect(body).toContain("临时法力牌：#11 幸运币(BAR_COIN1, 0费)");
+    expect(input).toContain('"playCards"');
+    expect(input).toContain('"requiresTemporaryMana":true');
+    expect(input).toContain('"temporaryManaCards"');
+  });
+
+  it("includes legal attack targets in the executable action list", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(responseFor(validResult()));
+    const client = new AgentClient(settings, "secret-key", catalog);
+
+    await client.analyze({
+      ...request,
+      snapshot: {
+        ...snapshot,
+        self: {
+          ...snapshot.self,
+          board: [
+            {
+              entityId: 20,
+              cardId: "MINION_002",
+              name: "己方随从",
+              attack: 2,
+              health: 2,
+              exhausted: false,
+              tags: {},
+            },
+          ],
+        },
+        opponent: {
+          ...snapshot.opponent,
+          board: [
+            {
+              entityId: 30,
+              cardId: "TAUNT_001",
+              name: "嘲讽随从",
+              attack: 1,
+              health: 4,
+              taunt: true,
+              tags: {},
+            },
+            {
+              entityId: 31,
+              cardId: "MINION_001",
+              name: "普通随从",
+              attack: 3,
+              health: 2,
+              tags: {},
+            },
+          ],
+        },
+      },
+    });
+
+    const input = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body)).input as string;
+    expect(input).toContain('"attacks"');
+    expect(input).toContain('"sourceEntityId":20');
+    expect(input).toContain('"targetEntityId":30');
+    expect(input).not.toContain('"targetEntityId":31');
+    expect(input).not.toContain('"targetEntityId":2');
   });
 
   it("retries once with local validation errors", async () => {
@@ -308,6 +369,39 @@ const catalog = new CardCatalog({
       text: "测试三费文本",
       cost: 3,
       cardType: "SPELL",
+      collectible: true,
+      standard: true,
+    },
+    {
+      cardId: "MINION_001",
+      name: "普通随从",
+      text: "",
+      cost: 2,
+      attack: 3,
+      health: 2,
+      cardType: "MINION",
+      collectible: true,
+      standard: true,
+    },
+    {
+      cardId: "MINION_002",
+      name: "己方随从",
+      text: "",
+      cost: 2,
+      attack: 2,
+      health: 2,
+      cardType: "MINION",
+      collectible: true,
+      standard: true,
+    },
+    {
+      cardId: "TAUNT_001",
+      name: "嘲讽随从",
+      text: "<b>嘲讽</b>",
+      cost: 4,
+      attack: 1,
+      health: 4,
+      cardType: "MINION",
       collectible: true,
       standard: true,
     },
