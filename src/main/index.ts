@@ -1,7 +1,6 @@
 import {
   app,
   globalShortcut,
-  ipcMain,
   Menu,
 } from "electron";
 import { existsSync } from "node:fs";
@@ -27,6 +26,7 @@ import {
   expandEnvironmentVariables,
   inspectPowerLog,
 } from "./power-log-locator.js";
+import { IPC, registerIpcHandlers } from "./ipc-handlers.js";
 import { SettingsStore } from "./settings-store.js";
 import { WindowManager } from "./window-manager.js";
 
@@ -47,24 +47,6 @@ let logStatus: LogStatus = {
   path: "",
   message: "尚未开始监听 Power.log。",
 };
-
-const IPC = {
-  getStatus: "app:get-status",
-  saveSettings: "app:save-settings",
-  setApiKey: "app:set-api-key",
-  hasApiKey: "app:has-api-key",
-  analyze: "app:analyze",
-  testAgentConnection: "app:test-agent-connection",
-  toggleOverlay: "app:toggle-overlay",
-  showMainWindow: "app:show-main-window",
-  listHistory: "app:list-history",
-  statusChanged: "app:status-changed",
-  getLastAgentRequest: "app:get-last-agent-request",
-  stopAnalysis: "app:stop-analysis",
-  windowMinimize: "app:window-minimize",
-  windowMaximize: "app:window-maximize",
-  windowClose: "app:window-close",
-} as const;
 
 const gotTheLock = app.requestSingleInstanceLock();
 if (!gotTheLock) {
@@ -111,7 +93,17 @@ app.whenReady().then(async () => {
 
   Menu.setApplicationMenu(null);
   windowManager.createWindows({ overlayVisible: settings.overlayVisible });
-  registerIpc();
+  registerIpcHandlers({
+    refreshCurrentLog,
+    getStatus,
+    getActiveAgent: activeAgent,
+    saveSettings,
+    toggleOverlay,
+    credentialStore,
+    historyDatabase,
+    analysisService,
+    windowManager,
+  });
   registerShortcuts();
   await startWatcher();
   broadcastStatus();
@@ -147,40 +139,14 @@ function registerShortcuts(): void {
   }
 }
 
-function registerIpc(): void {
-  ipcMain.handle(IPC.getStatus, async () => {
-    await refreshCurrentLog();
-    return getStatus();
-  });
-  ipcMain.handle(IPC.hasApiKey, (_event, agentId?: string) =>
-    credentialStore.getApiKey(agentId ?? activeAgent().id).then(Boolean),
-  );
-  ipcMain.handle(IPC.listHistory, () => historyDatabase.listAnalyses());
-  ipcMain.handle(IPC.getLastAgentRequest, () => analysisService.getLastAgentRequest());
-  ipcMain.handle(IPC.stopAnalysis, () => analysisService.stopAnalysis());
-  ipcMain.handle(IPC.analyze, () => analysisService.analyze("manual"));
-  ipcMain.handle(IPC.testAgentConnection, () => analysisService.testConnection());
-  ipcMain.handle(IPC.toggleOverlay, () => toggleOverlay());
-  ipcMain.handle(IPC.showMainWindow, () => windowManager.toggleMainWindow());
-  ipcMain.handle(IPC.windowMinimize, () => windowManager.minimizeMainWindow());
-  ipcMain.handle(IPC.windowMaximize, () => windowManager.toggleMainWindowMaximized());
-  ipcMain.handle(IPC.windowClose, () => windowManager.closeMainWindow());
-  ipcMain.handle(IPC.setApiKey, async (_event, apiKey: string, agentId?: string) => {
-    await credentialStore.setApiKey(apiKey, agentId ?? activeAgent().id);
-    return Boolean(apiKey.trim());
-  });
-  ipcMain.handle(
-    IPC.saveSettings,
-    async (_event, nextSettings: AppSettings) => {
-      catalog.setLanguage(nextSettings.language);
-      settings = await settingsStore.save(nextSettings);
-      await startWatcher();
-      setOverlayVisible(settings.overlayVisible);
-      registerShortcuts();
-      broadcastStatus();
-      return getStatus();
-    },
-  );
+async function saveSettings(nextSettings: AppSettings): Promise<AppStatus> {
+  catalog.setLanguage(nextSettings.language);
+  settings = await settingsStore.save(nextSettings);
+  await startWatcher();
+  setOverlayVisible(settings.overlayVisible);
+  registerShortcuts();
+  broadcastStatus();
+  return getStatus();
 }
 
 async function startWatcher(): Promise<void> {
