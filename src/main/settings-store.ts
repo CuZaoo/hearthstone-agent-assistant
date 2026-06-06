@@ -10,7 +10,23 @@ export class SettingsStore {
     try {
       const raw = await readFile(this.path, "utf8");
       const parsed = JSON.parse(raw) as Partial<AppSettings>;
-      return normalizeSettings({ ...DEFAULT_SETTINGS, ...parsed });
+      return normalizeSettings({
+        ...DEFAULT_SETTINGS,
+        ...parsed,
+        agents:
+          Array.isArray(parsed.agents) && parsed.agents.length > 0
+            ? parsed.agents
+            : [
+                {
+                  id: "default",
+                  name: "默认 Agent",
+                  baseUrl: parsed.baseUrl ?? DEFAULT_SETTINGS.baseUrl,
+                  model: parsed.model ?? DEFAULT_SETTINGS.model,
+                  transport: parsed.transport ?? DEFAULT_SETTINGS.transport,
+                  timeoutMs: parsed.timeoutMs ?? DEFAULT_SETTINGS.timeoutMs,
+                },
+              ],
+      });
     } catch (error) {
       const err = error as NodeJS.ErrnoException;
       if (err.code !== "ENOENT") {

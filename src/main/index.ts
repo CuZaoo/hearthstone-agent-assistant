@@ -395,10 +395,15 @@ async function analyzeCurrentState(): Promise<AppStatus> {
     }
 
     cancelSignal.throwIfAborted();
-    const agent = activeAgent();
-    const apiKey = await credentialStore.getApiKey(agent.id);
+    let agent = activeAgent();
+    let apiKey = await credentialStore.getApiKey(agent.id);
     if (!apiKey) {
-      throw new Error("尚未配置 Agent API Key。");
+      const fallback = await chooseFallbackAgent(agent, "尚未配置 Agent API Key。");
+      if (!fallback) {
+        throw new Error("尚未配置 Agent API Key。");
+      }
+      agent = fallback;
+      apiKey = fallback.apiKey;
     }
     if (!agent.model) {
       throw new Error("尚未配置 Agent 模型名称。");
