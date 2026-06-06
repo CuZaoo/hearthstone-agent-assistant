@@ -63,6 +63,9 @@ let lastAgentRequestBody: unknown | undefined;
 let analysisAbortController: AbortController | undefined;
 
 const AUTO_ANALYZE_STABLE_MS = 1_200;
+const MANUAL_ANALYSIS_SETTLE_TIMEOUT_MS = 2_500;
+const ANALYSIS_SETTLE_POLL_MS = 250;
+const VISUAL_SNAPSHOT_RETRY_LIMIT = 1;
 
 const IPC = {
   getStatus: "app:get-status",
@@ -396,43 +399,7 @@ async function analyzeCurrentState(source: "manual" | "auto" = "manual"): Promis
 
   try {
     assertLiveRecommendationsEnabled();
-    cancelSignal.throwIfAborted();
-    await refreshCurrentLog();
-    if (!currentSnapshot) {
-      throw new Error("尚未从 Power.log 读取到有效局面。");
-    }
-    const snapshot = currentSnapshot;
-    writeDiagnostic("analysis.snapshot", snapshotSummary(snapshot));
-    cancelSignal.throwIfAborted();
-    const snapshotReport = validateSnapshotForAnalysis(snapshot, catalog);
-    if (!snapshotReport.ok) {
-      writeDiagnostic("analysis.snapshot_rejected", {
-        errors: snapshotReport.errors,
-        warnings: snapshotReport.warnings,
-      });
-      throw new Error(snapshotReport.errors.join("；"));
-    }
-
-    cancelSignal.throwIfAborted();
-    const screenshot = await captureHearthstoneWindow();
-    visualValidation = new VisualValidator().validate(
-      screenshot,
-      snapshot,
-      catalog,
-    );
-    writeDiagnostic("analysis.visual_validation", {
-      ok: visualValidation.ok,
-      errors: visualValidation.errors,
-      warnings: visualValidation.warnings,
-      resolution: visualValidation.resolution,
-      matchedEntityIds: visualValidation.matchedEntityIds,
-    });
-    if (!visualValidation.ok) {
-      throw new Error(visualValidation.errors.join("；"));
-    }
-    if (currentSnapshot?.revision !== snapshot.revision) {
-      throw new Error("视觉校验期间局面已发生变化，请重新分析。");
-    }
+    const snapshot = await prepareSnapshotForAnalysis(source, cancelSignal);
 
     cancelSignal.throwIfAborted();
     let agent = activeAgent();
@@ -463,7 +430,8 @@ async function analyzeCurrentState(source: "manual" | "auto" = "manual"): Promis
       timeoutMs: remainingMs,
       signal: cancelSignal,
     });
-    if (currentSnapshot.revision !== requestedRevision) {
+    const latestSnapshot = currentSnapshot;
+    if (!latestSnapshot || latestSnapshot.revision !== requestedRevision) {
       currentAnalysis = {
         ...result,
         stale: true,
@@ -476,7 +444,7 @@ async function analyzeCurrentState(source: "manual" | "auto" = "manual"): Promis
       statusMessage = "局面已发生变化，本次建议已显示为过期。";
       writeDiagnostic("analysis.completed_stale", {
         snapshotRevision: result.snapshotRevision,
-        currentRevision: currentSnapshot.revision,
+        currentRevision: latestSnapshot?.revision,
         candidateCount: result.candidates.length,
       });
       return getStatus();
@@ -508,6 +476,88 @@ async function analyzeCurrentState(source: "manual" | "auto" = "manual"): Promis
     }
   }
   return getStatus();
+}
+
+async function prepareSnapshotForAnalysis(
+  source: "manual" | "auto",
+  signal: AbortSignal,
+): Promise<GameStateSnapshot> {
+  for (let attempt = 0; attempt <= VISUAL_SNAPSHOT_RETRY_LIMIT; attempt += 1) {
+    const snapshot = await readSnapshotForAnalysis(source, signal);
+    writeDiagnostic("analysis.snapshot", snapshotSummary(snapshot));
+    signal.throwIfAborted();
+    const snapshotReport = validateSnapshotForAnalysis(snapshot, catalog);
+    if (!snapshotReport.ok) {
+      writeDiagnostic("analysis.snapshot_rejected", {
+        errors: snapshotReport.errors,
+        warnings: snapshotReport.warnings,
+      });
+      throw new Error(snapshotReport.errors.join("；"));
+    }
+
+    signal.throwIfAborted();
+    const screenshot = await captureHearthstoneWindow();
+    visualValidation = new VisualValidator().validate(
+      screenshot,
+      snapshot,
+      catalog,
+    );
+    writeDiagnostic("analysis.visual_validation", {
+      ok: visualValidation.ok,
+      errors: visualValidation.errors,
+      warnings: visualValidation.warnings,
+      resolution: visualValidation.resolution,
+      matchedEntityIds: visualValidation.matchedEntityIds,
+    });
+    if (!visualValidation.ok) {
+      throw new Error(visualValidation.errors.join("；"));
+    }
+    if (currentSnapshot?.revision === snapshot.revision) {
+      return snapshot;
+    }
+    if (attempt < VISUAL_SNAPSHOT_RETRY_LIMIT) {
+      writeDiagnostic("analysis.snapshot_changed_retry", {
+        requestedRevision: snapshot.revision,
+        currentRevision: currentSnapshot?.revision,
+      });
+      statusMessage = "局面刚发生变化，正在重新读取…";
+      broadcastStatus();
+      await delay(ANALYSIS_SETTLE_POLL_MS, signal);
+      continue;
+    }
+    throw new Error("视觉校验期间局面已发生变化，请重新分析。");
+  }
+  throw new Error("无法读取稳定局面，请稍后重试。");
+}
+
+async function readSnapshotForAnalysis(
+  source: "manual" | "auto",
+  signal: AbortSignal,
+): Promise<GameStateSnapshot> {
+  await refreshCurrentLog();
+  if (!currentSnapshot) {
+    throw new Error("尚未从 Power.log 读取到有效局面。");
+  }
+  if (source === "manual" && currentSnapshot.animationPending) {
+    const deadline = Date.now() + MANUAL_ANALYSIS_SETTLE_TIMEOUT_MS;
+    writeDiagnostic("analysis.wait_for_stable_snapshot", {
+      revision: currentSnapshot.revision,
+      timeoutMs: MANUAL_ANALYSIS_SETTLE_TIMEOUT_MS,
+    });
+    statusMessage = "检测到动画或日志事件，正在等待局面稳定…";
+    broadcastStatus();
+    while (currentSnapshot?.animationPending && Date.now() < deadline) {
+      await delay(ANALYSIS_SETTLE_POLL_MS, signal);
+      signal.throwIfAborted();
+      await refreshCurrentLog();
+    }
+    statusMessage = "正在读取并校验当前局面…";
+    broadcastStatus();
+  }
+  if (!currentSnapshot) {
+    throw new Error("尚未从 Power.log 读取到有效局面。");
+  }
+  return currentSnapshot;
 }
 
 async function requestAnalysisWithFallback({
@@ -623,6 +673,23 @@ async function refreshCurrentLog(): Promise<void> {
       error: error instanceof Error ? error.message : "刷新 Power.log 失败。",
     });
   }
+}
+
+function delay(ms: number, signal: AbortSignal): Promise<void> {
+  if (signal.aborted) {
+    return Promise.reject(new DOMException("Aborted", "AbortError"));
+  }
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(resolve, ms);
+    signal.addEventListener(
+      "abort",
+      () => {
+        clearTimeout(timer);
+        reject(new DOMException("Aborted", "AbortError"));
+      },
+      { once: true },
+    );
+  });
 }
 
 async function captureHearthstoneWindow() {
