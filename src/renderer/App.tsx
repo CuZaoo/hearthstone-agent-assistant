@@ -62,6 +62,7 @@ function Dashboard({ status }: { status: AppStatus }) {
   const [busyElapsed, setBusyElapsed] = useState(0);
   const [guideOpen, setGuideOpen] = useState(!status.settings.guideDismissed);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [closeConfirmOpen, setCloseConfirmOpen] = useState(false);
   const [selectedCandidate, setSelectedCandidate] = useState<number | null>(null);
   const [expandedHistory, setExpandedHistory] = useState<string | null>(null);
 
@@ -139,9 +140,7 @@ function Dashboard({ status }: { status: AppStatus }) {
   const turnLabel = turnOwnerLabel(snapshot?.activePlayer);
   const turnClass = turnOwnerClass(snapshot?.activePlayer);
   const handleCloseWindow = () => {
-    if (window.confirm("确认关闭主界面并退出应用？")) {
-      void window.hearthstoneAgent.closeWindow();
-    }
+    setCloseConfirmOpen(true);
   };
 
   return (
@@ -320,6 +319,17 @@ function Dashboard({ status }: { status: AppStatus }) {
 
       {/* Guide Overlay */}
       {guideOpen && <GuideOverlay settings={settings} onClose={dismissGuide} />}
+
+      {closeConfirmOpen && (
+        <HearthstoneConfirm
+          title="要离开旅店吗？"
+          message="关闭主界面会退出对局助手，悬浮窗和日志监听也会一起停止。"
+          confirmText="确认关闭"
+          cancelText="继续使用"
+          onCancel={() => setCloseConfirmOpen(false)}
+          onConfirm={() => void window.hearthstoneAgent.closeWindow()}
+        />
+      )}
 
       {/* Settings Panel */}
       {settingsOpen && (
@@ -530,6 +540,38 @@ function OverlayBar({ status }: { status: AppStatus }) {
 }
 
 /* ==================== GUIDE OVERLAY ==================== */
+
+function HearthstoneConfirm({
+  title,
+  message,
+  confirmText,
+  cancelText,
+  onConfirm,
+  onCancel,
+}: {
+  title: string;
+  message: string;
+  confirmText: string;
+  cancelText: string;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <div className="guide-overlay confirm-overlay" onClick={onCancel}>
+      <div className="confirm-panel" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="close-confirm-title">
+        <div className="confirm-sigil"><span>!</span></div>
+        <div className="confirm-copy">
+          <h2 id="close-confirm-title">{title}</h2>
+          <p>{message}</p>
+        </div>
+        <div className="confirm-actions">
+          <button className="btn-confirm-cancel" onClick={onCancel}>{cancelText}</button>
+          <button className="btn-confirm-danger" onClick={onConfirm}>{confirmText}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function GuideOverlay({ settings, onClose }: { settings: AppSettings; onClose: () => void }) {
   return (
