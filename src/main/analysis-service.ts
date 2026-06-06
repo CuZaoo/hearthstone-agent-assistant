@@ -1,4 +1,3 @@
-import { dialog } from "electron";
 import { AgentClient } from "../core/agent-client.js";
 import { validateSnapshotForAnalysis } from "../core/analysis-validator.js";
 import type { CardCatalog } from "../core/card-catalog.js";
@@ -6,10 +5,11 @@ import type {
   AnalysisResult,
   AppSettings,
   AppStatus,
-  AgentProfile,
   GameStateSnapshot,
   VisualValidationReport,
 } from "../shared/types.js";
+import { AgentAnalysisRunner } from "./agent-analysis-runner.js";
+import { AgentFallbackSelector } from "./agent-fallback-selector.js";
 import { snapshotSummary } from "./analysis-diagnostics.js";
 import { delay } from "./analysis-timing.js";
 import type { CredentialStore } from "./credential-store.js";
@@ -56,8 +56,28 @@ export class AnalysisService {
   private pendingAutoAnalyzeRevision: string | undefined;
   private lastAgentRequestBody: unknown | undefined;
   private analysisAbortController: AbortController | undefined;
+  private readonly agentSelector: AgentFallbackSelector;
+  private readonly agentRunner: AgentAnalysisRunner;
 
-  constructor(private readonly deps: AnalysisServiceDependencies) {}
+  constructor(private readonly deps: AnalysisServiceDependencies) {
+    this.agentSelector = new AgentFallbackSelector({
+      getSettings: deps.getSettings,
+      saveSettings: deps.saveSettings,
+      credentialStore: deps.credentialStore,
+      windowManager: deps.windowManager,
+    });
+    this.agentRunner = new AgentAnalysisRunner({
+      getSettings: deps.getSettings,
+      getCatalog: deps.getCatalog,
+      credentialStore: deps.credentialStore,
+      fallbackSelector: this.agentSelector,
+      setStatusMessage: (message) => {
+        this.statusMessage = message;
+        this.deps.broadcastStatus();
+      },
+      diagnosticAgentEvent: (event) => this.diagnosticAgentEvent(event),
+    });
+  }
 
   state(): AnalysisServiceState {
     return {
@@ -110,28 +130,26 @@ export class AnalysisService {
     });
 
     try {
-      let agent = this.activeAgent();
-      let apiKey = await this.deps.credentialStore.getApiKey(agent.id);
-      if (!apiKey) {
-        const fallback = await this.chooseFallbackAgent(agent, "尚未配置 Agent API Key。");
-        if (!fallback) {
-          throw new Error("尚未配置 Agent API Key。");
-        }
-        agent = fallback;
-        apiKey = fallback.apiKey;
+      const agent = this.agentSelector.activeAgent();
+      const selectedAgent = await this.agentSelector.getApiKeyOrFallback(
+        agent,
+        "尚未配置 Agent API Key。",
+      );
+      if (!selectedAgent) {
+        throw new Error("尚未配置 Agent API Key。");
       }
-      if (!agent.model) {
+      if (!selectedAgent.model) {
         throw new Error("尚未配置 Agent 模型名称。");
       }
       const client = new AgentClient(
         {
-          baseUrl: agent.baseUrl,
-          model: agent.model,
-          transport: agent.transport,
-          timeoutMs: agent.timeoutMs,
+          baseUrl: selectedAgent.baseUrl,
+          model: selectedAgent.model,
+          transport: selectedAgent.transport,
+          timeoutMs: selectedAgent.timeoutMs,
           winRateEstimationEnabled: this.deps.getSettings().winRateEstimationEnabled,
         },
-        apiKey,
+        selectedAgent.apiKey,
         this.deps.getCatalog(),
         (event) => this.diagnosticAgentEvent(event),
       );
@@ -174,9 +192,11 @@ export class AnalysisService {
 
       cancelSignal.throwIfAborted();
 
-      const result = this.deps.getSettings().multiAgentCompareEnabled
-        ? await this.runMultiAgentComparison(snapshot, analysisStartedAt, cancelSignal)
-        : await this.runSingleAgentAnalysis(snapshot, analysisStartedAt, cancelSignal);
+      const result = await this.agentRunner.run(
+        snapshot,
+        analysisStartedAt,
+        cancelSignal,
+      );
 
       const latestSnapshot = this.deps.getSnapshot();
       if (!latestSnapshot || latestSnapshot.revision !== result.snapshotRevision) {
@@ -354,218 +374,6 @@ export class AnalysisService {
     return latest;
   }
 
-  private async requestAnalysisWithFallback({
-    agent,
-    apiKey,
-    snapshot,
-    timeoutMs,
-    signal,
-  }: {
-    agent: AgentProfile;
-    apiKey: string;
-    snapshot: GameStateSnapshot;
-    timeoutMs: number;
-    signal: AbortSignal;
-  }): Promise<AnalysisResult> {
-    try {
-      return await this.requestAnalysisFromAgent(agent, apiKey, snapshot, timeoutMs, signal);
-    } catch (error) {
-      const originalMessage =
-        error instanceof Error ? error.message : `${agent.name} 分析失败。`;
-      const fallback = await this.chooseFallbackAgent(agent, originalMessage);
-      if (!fallback) {
-        throw error;
-      }
-      this.statusMessage = `正在切换到 ${fallback.name} 重新分析…`;
-      this.deps.broadcastStatus();
-      return this.requestAnalysisFromAgent(
-        fallback,
-        fallback.apiKey,
-        snapshot,
-        timeoutMs,
-        signal,
-      );
-    }
-  }
-
-  private async requestAnalysisFromAgent(
-    agent: AgentProfile,
-    apiKey: string,
-    snapshot: GameStateSnapshot,
-    timeoutMs: number,
-    signal: AbortSignal,
-  ): Promise<AnalysisResult> {
-    const settings = this.deps.getSettings();
-    const client = new AgentClient(
-      {
-        baseUrl: agent.baseUrl,
-        model: agent.model,
-        transport: agent.transport,
-        timeoutMs,
-        winRateEstimationEnabled: settings.winRateEstimationEnabled,
-      },
-      apiKey,
-      this.deps.getCatalog(),
-      (event) => this.diagnosticAgentEvent(event),
-    );
-    return client.analyze(
-      {
-        snapshot,
-        objective: "recommend-current-turn",
-        maxCandidates: settings.maxCandidates,
-      },
-      signal,
-    );
-  }
-
-  private async runSingleAgentAnalysis(
-    snapshot: GameStateSnapshot,
-    analysisStartedAt: number,
-    cancelSignal: AbortSignal,
-  ): Promise<AnalysisResult> {
-    let agent = this.activeAgent();
-    let apiKey = await this.deps.credentialStore.getApiKey(agent.id);
-    if (!apiKey) {
-      const fallback = await this.chooseFallbackAgent(agent, "尚未配置 Agent API Key。");
-      if (!fallback) throw new Error("尚未配置 Agent API Key。");
-      agent = fallback;
-      apiKey = fallback.apiKey;
-    }
-    if (!agent.model) throw new Error("尚未配置 Agent 模型名称。");
-    this.statusMessage = `正在请求 ${agent.name} 分析…`;
-    this.deps.broadcastStatus();
-    const elapsed = Date.now() - analysisStartedAt;
-    const remainingMs = agent.timeoutMs - elapsed;
-    if (remainingMs < 1_000) {
-      throw new Error(`分析准备阶段已超过 ${agent.timeoutMs}ms 总预算。`);
-    }
-    return this.requestAnalysisWithFallback({
-      agent,
-      apiKey,
-      snapshot,
-      timeoutMs: remainingMs,
-      signal: cancelSignal,
-    });
-  }
-
-  private async runMultiAgentComparison(
-    snapshot: GameStateSnapshot,
-    analysisStartedAt: number,
-    cancelSignal: AbortSignal,
-  ): Promise<AnalysisResult> {
-    const settings = this.deps.getSettings();
-    const eligible: Array<AgentProfile & { apiKey: string }> = [];
-    for (const agent of settings.agents) {
-      if (!agent.model) continue;
-      const apiKey = await this.deps.credentialStore.getApiKey(agent.id);
-      if (apiKey) eligible.push({ ...agent, apiKey });
-    }
-    if (eligible.length === 0) {
-      return this.runSingleAgentAnalysis(snapshot, analysisStartedAt, cancelSignal);
-    }
-    this.statusMessage = `正在并行请求 ${eligible.length} 个 Agent 分析…`;
-    this.deps.broadcastStatus();
-
-    const elapsed = Date.now() - analysisStartedAt;
-    const perAgentMs = Math.max(4_000, settings.agents[0]?.timeoutMs ?? 8_000) - elapsed;
-
-    const results = await Promise.allSettled(
-      eligible.map((agent) =>
-        this.requestAnalysisFromAgent(agent, agent.apiKey, snapshot, Math.max(2_000, perAgentMs), cancelSignal),
-      ),
-    );
-
-    const successes: Array<{ agentName: string; result: AnalysisResult }> = [];
-    const errors: string[] = [];
-
-    for (const [index, settled] of results.entries()) {
-      const agent = eligible[index]!;
-      if (settled.status === "fulfilled") {
-        successes.push({ agentName: agent.name, result: settled.value });
-      } else {
-        errors.push(`${agent.name}: ${settled.reason instanceof Error ? settled.reason.message : "失败"}`);
-      }
-    }
-
-    if (successes.length === 0) {
-      throw new Error(`所有 Agent 分析均失败：${errors.join("；")}`);
-    }
-
-    const primary = successes[0]!;
-    const mergedCandidates = primary.result.candidates.map((candidate) => ({
-      ...candidate,
-      rationale: `[${primary.agentName}] ${candidate.rationale}`,
-    }));
-    const extraCandidates = successes.slice(1).flatMap((success) =>
-      success.result.candidates.map((candidate) => ({
-        ...candidate,
-        rank: mergedCandidates.length + candidate.rank,
-        rationale: `[${success.agentName}] ${candidate.rationale}`,
-      })),
-    );
-    mergedCandidates.push(...extraCandidates);
-    mergedCandidates.sort((a, b) => b.confidence - a.confidence);
-    mergedCandidates.forEach((candidate, index) => {
-      candidate.rank = index + 1;
-    });
-
-    const warnings: string[] = [...primary.result.warnings];
-    for (const success of successes.slice(1)) {
-      warnings.push(...success.result.warnings);
-    }
-    warnings.push(...errors.map((error) => `Agent 对比：${error}`));
-
-    return {
-      snapshotRevision: primary.result.snapshotRevision,
-      summary: `多 Agent 对比 · ${successes.length} 个成功${errors.length > 0 ? ` · ${errors.length} 个失败` : ""}`,
-      candidates: mergedCandidates.slice(0, settings.maxCandidates * successes.length),
-      warnings,
-      createdAt: new Date().toISOString(),
-    };
-  }
-
-  private async chooseFallbackAgent(
-    failedAgent: AgentProfile,
-    reason: string,
-  ): Promise<(AgentProfile & { apiKey: string }) | undefined> {
-    const settings = this.deps.getSettings();
-    const candidates: Array<AgentProfile & { apiKey: string }> = [];
-    for (const agent of settings.agents) {
-      if (agent.id === failedAgent.id || !agent.model) {
-        continue;
-      }
-      const apiKey = await this.deps.credentialStore.getApiKey(agent.id);
-      if (apiKey) {
-        candidates.push({ ...agent, apiKey });
-      }
-    }
-    const fallback = candidates[0];
-    if (!fallback) {
-      return undefined;
-    }
-    const dialogOptions: Electron.MessageBoxOptions = {
-      type: "warning",
-      buttons: [`使用 ${fallback.name}`, "取消"],
-      defaultId: 0,
-      cancelId: 1,
-      title: "Agent 分析失败",
-      message: `${failedAgent.name} 分析失败。是否切换到备用 Agent？`,
-      detail: reason,
-    };
-    const mainWindow = this.deps.windowManager.getMainWindow();
-    const response = mainWindow
-      ? await dialog.showMessageBox(mainWindow, dialogOptions)
-      : await dialog.showMessageBox(dialogOptions);
-    if (response.response !== 0) {
-      return undefined;
-    }
-    await this.deps.saveSettings({
-      ...settings,
-      activeAgentId: fallback.id,
-    });
-    return fallback;
-  }
-
   private assertLiveRecommendationsEnabled(): void {
     const settings = this.deps.getSettings();
     if (
@@ -595,7 +403,7 @@ export class AnalysisService {
 
   private diagnosticSettings() {
     const settings = this.deps.getSettings();
-    const agent = this.activeAgent();
+    const agent = this.agentSelector.activeAgent();
     return {
       powerLogPath: settings.powerLogPath,
       activeAgentId: agent.id,
@@ -610,20 +418,5 @@ export class AnalysisService {
         settings.liveRecommendationsRiskAcceptedAt,
       ),
     };
-  }
-
-  private activeAgent(): AgentProfile {
-    const settings = this.deps.getSettings();
-    return (
-      settings.agents.find((agent) => agent.id === settings.activeAgentId) ??
-      settings.agents[0] ?? {
-        id: "default",
-        name: "默认 Agent",
-        baseUrl: settings.baseUrl,
-        model: settings.model,
-        transport: settings.transport,
-        timeoutMs: settings.timeoutMs,
-      }
-    );
   }
 }
