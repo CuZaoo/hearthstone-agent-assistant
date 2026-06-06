@@ -41,4 +41,52 @@ describe("SettingsStore", () => {
     expect(settings.baseUrl).toBe("http://127.0.0.1:8001");
     expect(settings.model).toBe("qwen3.6-35b");
   });
+
+  it("normalizes malformed persisted settings instead of throwing", async () => {
+    const root = await mkdtemp(join(tmpdir(), "lscs-settings-store-"));
+    temporaryRoots.push(root);
+    const path = join(root, "settings.json");
+    await writeFile(
+      path,
+      JSON.stringify({
+        powerLogPath: 42,
+        agents: [
+          {
+            id: "  ",
+            name: "",
+            baseUrl: null,
+            model: 7,
+            transport: "bad",
+            timeoutMs: "slow",
+          },
+        ],
+        activeAgentId: "missing",
+        maxCandidates: 99,
+        overlayVisible: "yes",
+        language: "frFR",
+        hotkeys: {
+          analyze: "",
+          toggleOverlay: 123,
+        },
+      }),
+      "utf8",
+    );
+
+    const settings = await new SettingsStore(path).load();
+
+    expect(settings.powerLogPath).toContain("Power.log");
+    expect(settings.activeAgentId).toBe("agent-1");
+    expect(settings.agents[0]).toMatchObject({
+      id: "agent-1",
+      name: "Agent 1",
+      baseUrl: "https://api.openai.com",
+      model: "",
+      transport: "responses",
+      timeoutMs: 8000,
+    });
+    expect(settings.maxCandidates).toBe(5);
+    expect(settings.overlayVisible).toBe(true);
+    expect(settings.language).toBe("zhCN");
+    expect(settings.hotkeys.analyze).toBe("CommandOrControl+Shift+A");
+  });
 });
