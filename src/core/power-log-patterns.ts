@@ -21,7 +21,7 @@ export const ENTITY_TAG_LINE =
   /(?:GameState|PowerTaskList)\.DebugPrintPower\(\) -\s+tag=(?<tag>[A-Z0-9_]+) value=(?<value>[^\s]+)/;
 export const BLOCK_START = /BLOCK_START BlockType=(?<type>[A-Z_]+)/;
 export const BLOCK_END = /BLOCK_END/;
-export const CREATE_GAME = /CREATE_GAME/;
+export const CREATE_GAME = /GameState\.DebugPrintPower\(\) - CREATE_GAME/;
 export const TIMESTAMP = /^D\s+(?<time>\d{2}:\d{2}:\d{2}\.\d+)\s+/;
 export const ENTITY_DESCRIPTION =
   /entityName=(?<name>.+?) id=(?<id>\d+) zone=(?<zone>[A-Z]+) zonePos=(?<zonePosition>\d+) cardId=(?<cardId>[A-Za-z0-9_]*) player=(?<controller>\d+)/g;

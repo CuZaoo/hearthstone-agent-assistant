@@ -1,10 +1,16 @@
-import { dialog } from "electron";
 import { getActiveAgent } from "../shared/settings-model.js";
 import type { AgentProfile, AppSettings } from "../shared/types.js";
 import type { CredentialStore } from "./credential-store.js";
 import type { WindowManager } from "./window-manager.js";
 
 export type AgentWithApiKey = AgentProfile & { apiKey: string };
+
+let fallbackResolver: ((useFallback: boolean) => void) | null = null;
+
+export function resolveFallbackFromRenderer(useFallback: boolean): void {
+  fallbackResolver?.(useFallback);
+  fallbackResolver = null;
+}
 
 interface AgentFallbackSelectorDependencies {
   getSettings(): AppSettings;
@@ -22,13 +28,9 @@ export class AgentFallbackSelector {
 
   async getApiKeyOrFallback(
     agent: AgentProfile,
-    reason: string,
-  ): Promise<AgentWithApiKey | undefined> {
+  ): Promise<AgentWithApiKey> {
     const apiKey = await this.deps.credentialStore.getApiKey(agent.id);
-    if (apiKey) {
-      return { ...agent, apiKey };
-    }
-    return this.chooseFallbackAgent(agent, reason);
+    return { ...agent, apiKey: apiKey ?? "" };
   }
 
   async chooseFallbackAgent(
@@ -42,29 +44,27 @@ export class AgentFallbackSelector {
         continue;
       }
       const apiKey = await this.deps.credentialStore.getApiKey(agent.id);
-      if (apiKey) {
-        candidates.push({ ...agent, apiKey });
-      }
+      candidates.push({ ...agent, apiKey: apiKey ?? "" });
     }
     const fallback = candidates[0];
     if (!fallback) {
       return undefined;
     }
 
-    const dialogOptions: Electron.MessageBoxOptions = {
-      type: "warning",
-      buttons: [`使用 ${fallback.name}`, "取消"],
-      defaultId: 0,
-      cancelId: 1,
-      title: "Agent 分析失败",
-      message: `${failedAgent.name} 分析失败。是否切换到备用 Agent？`,
-      detail: reason,
-    };
     const mainWindow = this.deps.windowManager.getMainWindow();
-    const response = mainWindow
-      ? await dialog.showMessageBox(mainWindow, dialogOptions)
-      : await dialog.showMessageBox(dialogOptions);
-    if (response.response !== 0) {
+    if (!mainWindow) return undefined;
+
+    mainWindow.webContents.send("app:show-fallback-prompt-ui", {
+      failedAgentName: failedAgent.name,
+      fallbackAgentName: fallback.name,
+      reason,
+    });
+
+    const useFallback = await new Promise<boolean>((resolve) => {
+      fallbackResolver = resolve;
+    });
+
+    if (!useFallback) {
       return undefined;
     }
     await this.deps.saveSettings({

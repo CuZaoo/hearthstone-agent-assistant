@@ -1,27 +1,48 @@
-const SERVICE_NAME = "HearthstoneAgentAssistant";
-const API_KEY_ACCOUNT = "agent-api-key";
+import { safeStorage } from "electron";
+import { readFile, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 
 export class CredentialStore {
+  private readonly filePath: string;
+
+  constructor(userDataPath: string) {
+    this.filePath = join(userDataPath, "credentials.enc");
+  }
+
   async getApiKey(agentId = "default"): Promise<string | null> {
-    const keytar = await import("keytar");
-    const key = await keytar.getPassword(SERVICE_NAME, accountForAgent(agentId));
-    if (!key && agentId === "default") {
-      return keytar.getPassword(SERVICE_NAME, API_KEY_ACCOUNT);
-    }
-    return key;
+    const all = await this.loadAll();
+    return all[agentId] ?? null;
   }
 
   async setApiKey(apiKey: string, agentId = "default"): Promise<void> {
-    const keytar = await import("keytar");
-    const account = accountForAgent(agentId);
+    const all = await this.loadAll();
     if (apiKey.trim()) {
-      await keytar.setPassword(SERVICE_NAME, account, apiKey.trim());
+      all[agentId] = apiKey.trim();
     } else {
-      await keytar.deletePassword(SERVICE_NAME, account);
+      delete all[agentId];
+    }
+    await this.saveAll(all);
+  }
+
+  private async loadAll(): Promise<Record<string, string>> {
+    try {
+      const encrypted = await readFile(this.filePath);
+      if (!safeStorage.isEncryptionAvailable()) return {};
+      const decrypted = safeStorage.decryptString(encrypted);
+      return JSON.parse(decrypted) as Record<string, string>;
+    } catch {
+      return {};
     }
   }
-}
 
-function accountForAgent(agentId: string): string {
-  return `${API_KEY_ACCOUNT}:${agentId}`;
+  private async saveAll(data: Record<string, string>): Promise<void> {
+    const toSave = Object.fromEntries(Object.entries(data).filter(([, v]) => v));
+    if (Object.keys(toSave).length === 0) {
+      try { await writeFile(this.filePath, ""); } catch { /* ignore */ }
+      return;
+    }
+    if (!safeStorage.isEncryptionAvailable()) return;
+    const encrypted = safeStorage.encryptString(JSON.stringify(toSave));
+    await writeFile(this.filePath, encrypted);
+  }
 }

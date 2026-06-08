@@ -39,7 +39,7 @@ export class VisualValidator {
     }
 
     if (!catalog.hasFeatures()) {
-      warnings.push("没有可用的视觉特征，本次仅使用 Power.log 快照分析。");
+      warnings.push("没有可用的视觉特征，本次仅使用日志快照分析。");
       return { ok: true, errors, warnings, resolution, matchedEntityIds };
     }
 
@@ -63,7 +63,7 @@ export class VisualValidator {
     if (mismatchedEntityIds.length > 0) {
       if (matchedEntityIds.length === 0) {
         warnings.push(
-          `视觉校验坐标尚未适配当前窗口，${mismatchedEntityIds.length} 个实体未能匹配；本次仅使用 Power.log 快照分析。`,
+          `视觉校验坐标尚未适配当前窗口，${mismatchedEntityIds.length} 个实体未能匹配；本次仅使用日志快照分析。`,
         );
       } else {
         for (const entityId of mismatchedEntityIds) {
@@ -77,7 +77,7 @@ export class VisualValidator {
       mismatchedEntityIds.length === 0 &&
       errors.length === 0
     ) {
-      warnings.push("没有可用的视觉特征，本次仅使用 Power.log 快照分析。");
+      warnings.push("没有可用的视觉特征，本次仅使用日志快照分析。");
     }
     return {
       ok: errors.length === 0,

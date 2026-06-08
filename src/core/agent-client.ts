@@ -2,8 +2,13 @@ import type {
   AnalysisRequest,
   AnalysisResult,
   AppSettings,
+  PromptConfig,
 } from "../shared/types.js";
-import { validateAnalysisResult } from "./analysis-validator.js";
+import {
+  isDisplayableValidationFailure,
+  salvageValidCandidates,
+} from "./agent-result-salvage.js";
+import { validateCandidateLine } from "./analysis-validator.js";
 import type { CardCatalog } from "./card-catalog.js";
 import {
   chatCompletionsConnectionTestPayload,
@@ -15,13 +20,11 @@ import {
 import {
   extractChatCompletionsText,
   extractResponsesText,
+  extractUsage,
   parseAnalysisResult,
   parseConnectionTestResult,
 } from "./agent-result-parser.js";
-import {
-  isDisplayableValidationFailure,
-  salvageValidCandidates,
-} from "./agent-result-salvage.js";
+
 import { sanitizeSnapshotForAgent } from "./snapshot-sanitizer.js";
 
 type AgentDiagnosticEvent = {
@@ -34,8 +37,8 @@ export class AgentClient {
   constructor(
     private readonly settings: Pick<
       AppSettings,
-      "baseUrl" | "model" | "transport" | "timeoutMs" | "winRateEstimationEnabled"
-    >,
+      "apiUrl" | "model" | "format" | "timeoutMs" | "winRateEstimationEnabled"
+    > & { promptConfig?: PromptConfig },
     private readonly apiKey: string,
     private readonly catalog: CardCatalog,
     private readonly diagnostics?: AgentDiagnostics,
@@ -45,25 +48,19 @@ export class AgentClient {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.settings.timeoutMs);
     try {
-      const endpoint =
-        this.settings.transport === "responses"
-          ? "/v1/responses"
-          : "/v1/chat/completions";
       const payload =
-        this.settings.transport === "responses"
+        this.settings.format === "responses"
           ? await this.postJson(
-              endpoint,
               responsesConnectionTestPayload(this.settings.model),
               controller.signal,
             )
           : await this.postChatWithStructuredFallback(
-              endpoint,
               (mode) =>
                 chatCompletionsConnectionTestPayload(this.settings.model, mode),
               controller.signal,
             );
       const text =
-        this.settings.transport === "responses"
+        this.settings.format === "responses"
           ? extractResponsesText(payload)
           : extractChatCompletionsText(payload);
       const parsed = parseConnectionTestResult(text);
@@ -126,61 +123,52 @@ export class AgentClient {
         }
         throw error;
       }
-      const report = validateAnalysisResult(
-        result,
-        request.snapshot,
-        this.catalog,
-      );
-      if (result.candidates.length > request.maxCandidates) {
-        report.ok = false;
-        report.errors.push(
-          `Agent 返回了 ${result.candidates.length} 条路线，超过上限 ${request.maxCandidates}。`,
-        );
-      }
-      if (report.ok) {
-        return {
-          ...result,
-          warnings: [...result.warnings, ...report.warnings],
-          createdAt: new Date().toISOString(),
-        };
-      }
-      const salvage = salvageValidCandidates(
+
+      const salvaged = salvageValidCandidates(
         result,
         request.snapshot,
         this.catalog,
         request.maxCandidates,
       );
-      if (salvage) {
-        this.emitDiagnostic("agent.analysis.salvaged_candidates", {
-          attempt: attempt + 1,
-          keptCandidates: salvage.candidates.length,
-          originalCandidates: result.candidates.length,
-          validationErrors: report.errors,
-        });
+      if (salvaged) {
         return {
-          ...salvage,
+          ...salvaged,
           createdAt: new Date().toISOString(),
         };
       }
-      if (attempt === 1 && isDisplayableValidationFailure(report.errors)) {
+
+      if (attempt === 0) {
+        repairErrors = collectCandidateErrors(result, request.snapshot, this.catalog);
+        if (result.candidates.length > request.maxCandidates) {
+          repairErrors.push(`返回了 ${result.candidates.length} 条路线，超过上限 ${request.maxCandidates}。`);
+        }
+        this.emitDiagnostic("agent.analysis.retry_after_validation", {
+          attempt: attempt + 1,
+          errors: repairErrors,
+        });
+        continue;
+      }
+
+      const finalErrors = collectCandidateErrors(result, request.snapshot, this.catalog);
+      if (result.candidates.length > request.maxCandidates) {
+        finalErrors.push(`返回了 ${result.candidates.length} 条路线，超过上限 ${request.maxCandidates}。`);
+      }
+      if (isDisplayableValidationFailure(finalErrors)) {
         return {
           ...result,
           warnings: [
             ...result.warnings,
-            ...report.warnings,
-            `本地校验提示：${report.errors.join("；")}`,
+            `本地校验提示：${finalErrors.join("；")}`,
           ],
           createdAt: new Date().toISOString(),
         };
       }
-      this.emitDiagnostic("agent.analysis.validation_failed", {
-        attempt: attempt + 1,
-        errors: report.errors,
-        warnings: report.warnings,
-      });
-      repairErrors = report.errors;
+
+      throw new Error(
+        `Agent 返回结果未通过本地校验：${finalErrors.join("；")}`,
+      );
     }
-    throw new Error(`Agent 返回结果未通过本地校验：${repairErrors.join("；")}`);
+    throw new Error("Agent 分析出现未预期的流程错误。");
   }
 
   private async requestAnalysis(
@@ -195,44 +183,60 @@ export class AgentClient {
       ? AbortSignal.any([controller.signal, externalSignal])
       : controller.signal;
     try {
-      const endpoint =
-        this.settings.transport === "responses"
-          ? "/v1/responses"
-          : "/v1/chat/completions";
       const startedAt = Date.now();
       const winRateEnabled = this.settings.winRateEstimationEnabled ?? false;
-      const body =
-        this.settings.transport === "responses"
+      const promptConfig = this.settings.promptConfig;
+      const requestBody =
+        this.settings.format === "responses"
           ? responsesPayload(
               this.settings.model,
               request,
               repairErrors,
               this.catalog,
               winRateEnabled,
+              promptConfig,
             )
           : chatCompletionsPayload(
               this.settings.model,
               request,
               repairErrors,
               this.catalog,
-              "json_object",
+              "json_schema",
               winRateEnabled,
+              promptConfig,
             );
       this.emitDiagnostic("agent.analysis.request_payload", {
-        transport: this.settings.transport,
+        format: this.settings.format,
         model: this.settings.model,
-        body,
+        body: requestBody,
       });
-      const payload = await this.postJson(endpoint, body, combinedSignal);
+      const payload =
+        this.settings.format === "responses"
+          ? await this.postJson(requestBody, combinedSignal)
+          : await this.postChatWithStructuredFallback(
+              (mode) =>
+                chatCompletionsPayload(
+                  this.settings.model,
+                  request,
+                  repairErrors,
+                  this.catalog,
+                  mode,
+                  winRateEnabled,
+                  promptConfig,
+                ),
+              combinedSignal,
+            );
       const text =
-        this.settings.transport === "responses"
+        this.settings.format === "responses"
           ? extractResponsesText(payload)
           : extractChatCompletionsText(payload);
+      const usage = extractUsage(payload, this.settings.format);
       this.emitDiagnostic("agent.analysis.raw_response", {
         elapsedMs: Date.now() - startedAt,
         responseText: text,
+        usage,
       });
-      return parseAnalysisResult(text);
+      return { ...parseAnalysisResult(text), usage, durationMs: Date.now() - startedAt };
     } catch (error) {
       if (error instanceof Error && error.name === "AbortError") {
         if (externalSignal?.aborted) {
@@ -247,31 +251,32 @@ export class AgentClient {
   }
 
   private async postChatWithStructuredFallback(
-    endpoint: string,
     buildBody: (mode: StructuredOutputMode) => object,
     signal: AbortSignal,
   ): Promise<unknown> {
     try {
-      return await this.postJson(endpoint, buildBody("json_schema"), signal);
+      return await this.postJson(buildBody("json_schema"), signal);
     } catch (error) {
       if (error instanceof AgentHttpError && error.status === 400) {
-        return this.postJson(endpoint, buildBody("json_object"), signal);
+        return this.postJson(buildBody("json_object"), signal);
       }
       throw error;
     }
   }
 
   private async postJson(
-    endpoint: string,
     body: object,
     signal: AbortSignal,
   ): Promise<unknown> {
-    const response = await fetch(joinUrl(this.settings.baseUrl, endpoint), {
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
+    if (this.apiKey) {
+      headers.Authorization = `Bearer ${this.apiKey}`;
+    }
+    const response = await fetch(this.settings.apiUrl, {
       method: "POST",
-      headers: {
-        Authorization: `Bearer ${this.apiKey}`,
-        "Content-Type": "application/json",
-      },
+      headers,
       body: JSON.stringify(body),
       signal,
     });
@@ -286,20 +291,19 @@ export class AgentClient {
   }
 }
 
-function joinUrl(baseUrl: string, path: string): string {
-  const normalizedBase = baseUrl.replace(/\/+$/, "");
-  const normalizedPath = path.replace(/\/+$/, "");
-  if (normalizedBase.endsWith(normalizedPath)) {
-    return normalizedBase;
-  }
-  if (normalizedBase.endsWith("/v1") && path.startsWith("/v1/")) {
-    return `${normalizedBase}${path.slice(3)}`;
-  }
-  return `${normalizedBase}${path}`;
-}
-
 class AgentHttpError extends Error {
   constructor(readonly status: number) {
     super(`Agent 接口返回 HTTP ${status}。`);
   }
+}
+
+function collectCandidateErrors(
+  result: AnalysisResult,
+  snapshot: AnalysisRequest["snapshot"],
+  catalog: CardCatalog,
+): string[] {
+  return result.candidates.flatMap((candidate) => {
+    const report = validateCandidateLine(candidate, snapshot, catalog);
+    return report.errors;
+  });
 }

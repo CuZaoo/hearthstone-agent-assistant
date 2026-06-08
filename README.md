@@ -1,115 +1,288 @@
-# 炉石对局 Agent 助手
+# Hearthstone Agent Assistant · 炉石对局 Agent 助手
 
-Windows 11 桌面应用原型。应用只读取 `Power.log`、本地截图和用户配置，不会点击、出牌、注入游戏进程、读取内存或绕过反作弊。
+<p align="center">
+  <img src="public/icon.svg" width="120" alt="App Icon" />
+</p>
 
-## 当前范围
+<p align="center">
+  <em>A read-only, privacy-first AI assistant for Hearthstone — analyze your board, get optimal play suggestions from LLMs.</em><br />
+  <em>只读、隐私优先的炉石对局 AI 助手。解析局面、调用你选择的 AI 模型，获取回合建议。</em>
+</p>
 
-- Electron + TypeScript + React
-- 标准构筑、简体中文客户端、16:9 单屏
-- `Ctrl+Shift+A` 分析当前局面
-- `Ctrl+Shift+O` 显示或隐藏置顶悬浮窗
-- OpenAI 兼容的 Responses API 与 Chat Completions API
-- 可配置接口地址、模型、传输协议、超时与候选路线数量
-- API Key 仅保存到 Windows 凭据管理器
-- 截图仅用于本地校验，不发送给远程 Agent
+<p align="center">
+  <img src="https://img.shields.io/badge/Electron-34-blue?logo=electron" alt="Electron" />
+  <img src="https://img.shields.io/badge/TypeScript-5.7-3178C6?logo=typescript" alt="TypeScript" />
+  <img src="https://img.shields.io/badge/React-19-61DAFB?logo=react" alt="React" />
+  <img src="https://img.shields.io/badge/Vite-6-646CFF?logo=vite" alt="Vite" />
+  <img src="https://img.shields.io/badge/SQLite-better--sqlite3-003B57?logo=sqlite" alt="SQLite" />
+  <img src="https://img.shields.io/badge/status-alpha-yellow" alt="Status" />
+  <img src="https://img.shields.io/badge/platform-Windows-blue" alt="Platform" />
+  <img src="https://img.shields.io/badge/license-MIT-green" alt="License" />
+</p>
 
-DeepSeek 可使用：
+---
 
-```text
-接口地址: https://api.deepseek.com
-模型名称: deepseek-chat
-传输协议: Chat Completions API
+**Hearthstone Agent Assistant** is a desktop application that reads Hearthstone's `Power.log` and your screen, builds a structured game state snapshot, and sends it to an LLM (Large Language Model) of your choice for strategic analysis. It is **read-only by design** — it never clicks, plays cards, injects into the game process, reads memory, or bypasses anti-cheat.
+
+**炉石对局 Agent 助手** 是一款桌面应用，通过读取炉石传说的 `Power.log` 和屏幕截图，构建结构化局面快照，发送给你选择的 AI 模型进行战略分析。**设计上只读**——不点击、不出牌、不注入游戏进程、不读取内存、不绕过反作弊。
+
+---
+
+## ✨ Features · 功能特性
+
+| | English | 中文 |
+|---|---|---|
+| 🔒 | **Read-Only & Privacy-First** — Only reads Power.log and screenshots locally. A dedicated sanitization layer strips player names, raw tags, and timestamps before any data reaches AI providers. Screenshots are used only for local visual validation and never transmitted. | **只读且隐私优先** ——仅读取本地 Power.log 和截图；专用脱敏层在数据发送前移除玩家名称、原始标签和时间戳；截图仅用于本地视觉校验，永不发送。 |
+| 🤖 | **Multi-Provider AI** — Works with 9+ LLM providers including OpenAI, DeepSeek, Zhipu GLM, Qwen, Kimi, SiliconFlow, MiniMax, Doubao, and Ollama. Supports both Responses API and Chat Completions API. | **多 AI 服务商** ——支持 OpenAI、DeepSeek、智谱 GLM、Qwen、Kimi、硅基流动、MiniMax、豆包、Ollama 等 9+ 家服务商，兼容 Responses API 与 Chat Completions API。 |
+| 🧠 | **Full Power.log Parser** — A hand-crafted state machine that parses Hearthstone's debug log format (TAG_CHANGE, SHOW_ENTITY, FULL_ENTITY, BLOCK_START/END). Handles multi-GB files, SHA1 deduplication, file rotation, and auto-discovery of the latest session log. | **完整 Power.log 解析器** ——手写状态机，解析炉石调试日志格式（TAG_CHANGE、SHOW_ENTITY、FULL_ENTITY、BLOCK_START/END），处理多 GB 文件、SHA1 去重、文件轮转和最新会话日志自动发现。 |
+| 👁️ | **Visual Validation** — Captures screenshots of the Hearthstone window and validates card positions using difference hashing (dHash). Matches on-screen card art against the built-in card catalog to verify that log state matches what you actually see. | **视觉校验** ——截取炉石窗口截图，使用差分哈希（dHash）验证卡牌位置，将屏幕上的卡牌美术与内置卡牌目录比对，确保日志状态与画面一致。 |
+| 📊 | **Adoption Tracking** — Automatically detects which of the AI's recommended actions you actually took by comparing pre-turn and post-turn snapshots. Track your adoption rate per agent over time. | **采纳追踪** ——通过对比回合前后的快照，自动识别你实际执行了 AI 的哪些推荐动作，追踪每个 Agent 的历史采纳率。 |
+| 🧩 | **Multi-Agent Comparison** — Query multiple LLM providers in parallel, merge results ranked by confidence score, and see which agent suggested what. | **多 Agent 对比** ——并行查询多个 AI 模型，按置信度排序融合结果，直观对比各家的建议差异。 |
+| 🛡️ | **Structured Output with Graceful Fallback** — Uses OpenAI-compatible `json_schema` structured output when available. Falls back to `json_object` for providers that don't support strict schemas, then validates everything locally. Three layers of reliability. | **结构化输出 + 优雅降级** ——优先使用 `json_schema` 结构化输出，对不支持严格 schema 的服务商自动降级为 `json_object`，最后用本地校验确保结果合法。三层可靠性保障。 |
+| 🖥️ | **Triple-Window UI** — A full dashboard (frameless, resizable), a transparent overlay (always-on-top, pinned), and a minimized draggable ball. Hotkeys: `Ctrl+Shift+A` to analyze, `Ctrl+Shift+O` to toggle overlay. | **三窗口 UI** ——完整仪表盘（无边框、可缩放）、透明悬浮窗（置顶固定）和最小化拖拽球。快捷键：`Ctrl+Shift+A` 分析、`Ctrl+Shift+O` 切换悬浮窗。 |
+| 🧹 | **Clean Architecture** — Separated into `core/` (pure logic, no Electron/React dependency), `main/` (Electron main process), `renderer/` (React UI), and `shared/` (types and defaults). Each layer has a single, well-defined responsibility. | **清晰架构** ——分为 `core/`（纯逻辑，无 Electron/React 依赖）、`main/`（Electron 主进程）、`renderer/`（React UI）和 `shared/`（类型与默认值）四层，各层职责单一。 |
+| 🔑 | **Encrypted Credentials** — API keys are stored via Electron's safeStorage (Windows DPAPI). Never in plain-text settings files. | **凭据加密** ——API Key 通过 Electron safeStorage（Windows DPAPI）加密存储，永不以明文保存。 |
+
+---
+
+## 🖼️ Screenshots · 界面预览
+
+<p align="center">
+  <em><!-- Screenshots placeholder — replace with actual images --></em><br />
+  <em><!-- 截图占位 —— 请替换为实际图片 --></em>
+</p>
+
+```
+  ┌─ Dashboard ─────────────────────────────────┐
+  │  [Status Bar]  │  Turn 5  │  Mana 4/5      │
+  ├─────────────────────────────────────────────┤
+  │  Hand: [Card] [Card] [Card] [Card]          │
+  │  Board: [Minion] [Minion]                   │
+  │  Opponent: [Minion] [Minion] [Secret]       │
+  ├─────────────────────────────────────────────┤
+  │  ┌─ Advisor ──────────────────────────────┐ │
+  │  │  #1  Pyroblast to Face   ★ 0.85  70% │ │
+  │  │  #2  Trade + Hero Power  ★ 0.72  62% │ │
+  │  └───────────────────────────────────────┘ │
+  └─────────────────────────────────────────────┘
 ```
 
-如果 Chat Completions 服务不支持严格 `json_schema`，应用会自动降级到
-`json_object`，再用本地校验拦截非法路线。
+---
 
-正式对局实时建议默认禁用。启用前必须确认已获得授权并接受账号与合规风险。
+## 🎯 How It Works · 工作原理
 
-## 本地开发
+```
+  ┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐
+  │ Power.log│───▶│  Parser  │───▶│Snapshot  │───▶│Sanitizer│───▶│   LLM    │───▶│   UI     │
+  │ (Watcher)│    │(State    │    │+Enrich   │    │(Privacy) │    │(Agent)   │    │(React)   │
+  └──────────┘    │ Machine) │    └──────────┘    └──────────┘    └──────────┘    └──────────┘
+                  └──────────┘                                                    │
+  ┌──────────┐                                                                ┌──▼─────────┐
+  │Screenshot│───────────────────────────────────────────────────────────────▶│  Validator │
+  │ (dHash)  │  (local only, never sent to AI)                               │(Local Check)│
+  └──────────┘                                                                └────────────┘
+```
 
-依赖已按 Wang 授权安装。常用命令：
+| Step | What happens | 发生了什么 |
+|------|-------------|-----------|
+| 1 | The file watcher reads `Power.log` incrementally, parsing TAG_CHANGE, SHOW_ENTITY, FULL_ENTITY events through a state machine | 日志监视器增量读取 Power.log，通过状态机解析事件 |
+| 2 | The parser builds a structured `GameStateSnapshot` — who the player is, hand cards, board minions, mana, secrets, weapon, turn count, etc. | 解析器构建结构化 `GameStateSnapshot`——玩家身份、手牌、场面随从、法力水晶、奥秘、武器、回合数等 |
+| 3 | A screenshot is captured and validated locally via dHash against the card catalog (never sent to any AI provider) | 截取本地截图，通过 dHash 与卡牌目录比对校验（绝不发送给 AI） |
+| 4 | The snapshot is sanitized: raw entity tags, player names, and timestamps are stripped. Only whitelisted, catalog-enriched data leaves your machine | 快照脱敏：移除原始标签、玩家名称和时间戳，仅白名单数据离开本机 |
+| 5 | The sanitized snapshot is sent to your configured LLM (OpenAI, DeepSeek, etc.) with a structured prompt requesting candidate play lines with confidence scores and win rate estimates | 脱敏后的快照发送给你配置的 AI 模型，附带结构化提示词请求候选路线 |
+| 6 | The AI response is parsed, validated locally (mana cost, taunt priority, board capacity, entity existence, etc.), and displayed as ranked candidates in the UI | 解析 AI 回复，本地校验（费用、嘲讽、场面容量、实体存在性等），在 UI 中以排名展示 |
+
+---
+
+## 🏗️ Architecture · 项目架构
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                     src/  (project source)                          │
+│                                                                     │
+│  ┌──────────────────────────────────────────────────────────────┐   │
+│  │                      renderer/  (React UI)                    │   │
+│  │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌────────────────┐  │   │
+│  │  │Dashboard │ │OverlayBar│ │ BallView │ │ + 13 more      │  │   │
+│  │  │  (main)  │ │(overlay) │ │(minimized)│ │   components   │  │   │
+│  │  └──────────┘ └──────────┘ └──────────┘ └────────────────┘  │   │
+│  │  ┌────────────────────────────────────────────────────────┐  │   │
+│  │  │  styles.css (2761 lines — Hearthstone dark theme)     │  │   │
+│  │  └────────────────────────────────────────────────────────┘  │   │
+│  └──────────────────────────────────────────────────────────────┘   │
+│                          ↕  IPC (contextBridge)                     │
+│  ┌──────────────────────────────────────────────────────────────┐   │
+│  │                      main/  (Electron)                        │   │
+│  │  ┌─────────────┐ ┌─────────────┐ ┌─────────────────────────┐ │   │
+│  │  │WindowManager│ │Analysis     │ │PowerLogRuntime          │ │   │
+│  │  │ (3 windows) │ │Service      │ │ (Watcher + Parser)      │ │   │
+│  │  └─────────────┘ └─────────────┘ └─────────────────────────┘ │   │
+│  │  ┌─────────────┐ ┌─────────────┐ ┌─────────────────────────┐ │   │
+│  │  │SettingsStore│ │Credential   │ │HistoryDatabase (SQLite) │ │   │
+│  │  │             │ │Store (DPAPI)│ │AdoptionTracker          │ │   │
+│  │  └─────────────┘ └─────────────┘ └─────────────────────────┘ │   │
+│  └──────────────────────────────────────────────────────────────┘   │
+│                          ↕  direct calls                            │
+│  ┌──────────────────────────────────────────────────────────────┐   │
+│  │                      core/  (Pure Logic)                      │   │
+│  │  ┌────────────────┐ ┌────────────────┐ ┌──────────────────┐  │   │
+│  │  │PowerLogParser  │ │ PowerLogWatcher│ │CardCatalog       │  │   │
+│  │  │(524 lines —    │ │ (polling,      │ │ (JSON, build     │  │   │
+│  │  │ state machine) │ │  file rotation)│ │  match, dHash)   │  │   │
+│  │  └────────────────┘ └────────────────┘ └──────────────────┘  │   │
+│  │  ┌────────────────┐ ┌────────────────┐ ┌──────────────────┐  │   │
+│  │  │AgentClient     │ │AgentPrompt     │ │AnalysisValidator │  │   │
+│  │  │(retry, fallback│ │(system prompt  │ │(pre/post checks) │  │   │
+│  │  │ JSON parsing)  │ │ builder)       │ │                  │  │   │
+│  │  └────────────────┘ └────────────────┘ └──────────────────┘  │   │
+│  │  ┌────────────────┐ ┌────────────────┐ ┌──────────────────┐  │   │
+│  │  │Snapshot        │ │Snapshot        │ │ActionValidator   │  │   │
+│  │  │Sanitizer       │ │Enricher        │ │(mana, taunt,     │  │   │
+│  │  │(privacy layer) │ │(catalog data)  │ │ board capacity)  │  │   │
+│  │  └────────────────┘ └────────────────┘ └──────────────────┘  │   │
+│  │  ┌────────────────┐ ┌────────────────┐                        │   │
+│  │  │ActionHints     │ │VisualValidator │                        │   │
+│  │  │(legal actions) │ │(dHash matching)│                        │   │
+│  │  └────────────────┘ └────────────────┘                        │   │
+│  └──────────────────────────────────────────────────────────────┘   │
+│                                                                     │
+│  ┌──────────────────────────────────────────────────────────────┐   │
+│  │                      shared/  (Types & Defaults)              │   │
+│  │  ┌────────────────┐ ┌────────────────┐ ┌──────────────────┐  │   │
+│  │  │types.ts        │ │defaults.ts     │ │settings-model.ts │  │   │
+│  │  │(43 interfaces) │ │(9 providers)   │ │(agent mgmt)      │  │   │
+│  │  └────────────────┘ └────────────────┘ └──────────────────┘  │   │
+│  └──────────────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### Why This Architecture · 为什么这样分层
+
+| Layer | Depends On | Responsibility | 职责 |
+|-------|-----------|----------------|------|
+| **`core/`** | Nothing (pure TS) | Business logic: parsing, validation, prompting, AI communication | 业务逻辑：解析、校验、提示词构建、AI 通信 |
+| **`main/`** | `core/` + Electron | Process orchestration: windows, IPC, file I/O, credentials, history | 进程编排：窗口管理、IPC、文件读写、凭据、历史记录 |
+| **`renderer/`** | React | UI rendering: dashboard, overlay, ball, settings, analysis display | UI 渲染：仪表盘、悬浮窗、设置、分析展示 |
+| **`shared/`** | Nothing (pure TS) | Shared types, defaults, and utilities imported by all layers | 共享类型、默认值和工具函数，各层共用 |
+
+---
+
+## 🚀 Getting Started · 快速开始
+
+### Prerequisites · 前置要求
+
+- Windows 10/11
+- [Node.js](https://nodejs.org/) >= 18
+- Hearthstone with [Power.log enabled](https://github.com/HearthSim/Hearthstone-Deck-Tracker/wiki/Setting-up-the-log.config) (see below)
+- An API key from your preferred LLM provider
+
+### Install & Run · 安装与运行
 
 ```powershell
+# Install dependencies
 npm install
+
+# Type-check (always a good start)
 npm run typecheck
+
+# Run tests
 npm test
+
+# Start development mode (Vite + tsc watch + Electron)
 npm run dev
 ```
 
-实战联调用 `npm run dev`。它会同时启动 Vite、主进程 TypeScript watch 和
-Electron；主进程重新编译后会自动重启 Electron，比打包快。
+`npm run dev` starts Vite, the main process TypeScript watcher, and Electron simultaneously. The main process auto-restarts Electron on recompilation — much faster than rebuilding.
 
-如果只想运行已经构建好的源码版：
+开发模式下同时启动 Vite、主进程 TypeScript watch 和 Electron；主进程重新编译后自动重启 Electron。
 
 ```powershell
+# Build and run from compiled source
 npm run build
 npm run start:built
+
+# Generate Windows installer
+npm run package
 ```
 
-调试日志写入：
+### Diagnostics · 诊断日志
 
-```text
+Logs are written to:
+
+```
 %APPDATA%\hearthstone-agent-assistant\diagnostics.jsonl
 ```
 
-查看最近分析流程：
+View recent analysis traces:
 
 ```powershell
 Get-Content "$env:APPDATA\hearthstone-agent-assistant\diagnostics.jsonl" -Tail 80
 ```
 
-日志包含 Power.log 快照摘要、视觉校验、Agent 原始回复、解析错误和本地校验错误；
-不会记录 API Key 或截图。
+---
 
-生成 Windows 测试安装器：
+## 🤖 AI Provider Setup · AI 服务商配置
 
-```powershell
-npm run package
-```
+The app comes with **9 pre-configured provider presets**. Select one in the settings panel and enter your API key — it's stored encrypted via Windows DPAPI, never in plain text.
 
-## Power.log
+应用内置 **9 个预置服务商**，在设置面板中选择后输入 API Key 即可——Key 通过 Windows DPAPI 加密存储。
 
-应用只检测和读取日志，不会自动修改炉石配置。请参考
-[Hearthstone Deck Tracker 的日志配置说明](https://github.com/HearthSim/Hearthstone-Deck-Tracker/wiki/Setting-up-the-log.config)
-手动启用 `Power.log`。
+| Provider | API URL | Model | Protocol |
+|----------|---------|-------|----------|
+| **DeepSeek** | `https://api.deepseek.com` | `deepseek-chat` | Chat Completions |
+| **OpenAI** | `https://api.openai.com/v1` | `gpt-4o` | Responses API |
+| **Zhipu GLM (智谱)** | `https://open.bigmodel.cn/api/paas/v4` | `glm-4-plus` | Chat Completions |
+| **Qwen (千问)** | `https://dashscope.aliyuncs.com/compatible-mode/v1` | `qwen-plus` | Chat Completions |
+| **Kimi (月之暗面)** | `https://api.moonshot.cn/v1` | `moonshot-v1-8k` | Chat Completions |
+| **SiliconFlow (硅基流动)** | `https://api.siliconflow.cn/v1` | `deepseek-ai/DeepSeek-V3` | Chat Completions |
+| **MiniMax** | `https://api.minimax.chat/v1` | `MiniMax-Text-01` | Chat Completions |
+| **Doubao (豆包)** | `https://ark.cn-beijing.volces.com/api/v3` | (custom) | Chat Completions |
+| **Ollama (local)** | `http://localhost:11434/v1` | `llama3` | Chat Completions |
 
-可填写 `Power.log` 文件路径、炉石安装目录，或炉石安装目录下的 `Logs`
-目录。参考 AutoHS 的新版定位方式，当前炉石会话日志通常位于：
+### Structured Output Support · 结构化输出支持
 
-```text
-<炉石安装目录>\Logs\Hearthstone_日期时间\Power.log
-```
+If your Chat Completions provider doesn't support strict `json_schema`, the app automatically degrades to `json_object` mode, then validates the response locally — discarding any invalid candidate routes.
 
-默认路径：
+如果你的 Chat Completions 服务商不支持严格的 `json_schema`，应用会自动降级到 `json_object` 模式，再用本地校验拦截非法路线。
 
-```text
-%LOCALAPPDATA%\Blizzard\Hearthstone\Logs\Power.log
-```
+---
 
-应用也会自动读取 Hearthstone Deck Tracker 的本地配置，并在炉石安装目录的
-`Logs\Hearthstone_日期时间\Power.log` 会话目录中切换到最新日志。
+## 📋 Power.log Configuration · 日志配置
 
-如果应用提示“已发现最新炉石日志目录，但其中没有 Power.log”，说明当前炉石
-会话日志目录存在，但 `Power.log` 尚未生成。常见原因是尚未进入对局，或
-`log.config` 未手动启用 Power 日志。
+The app only reads Power.log — it does not modify Hearthstone's configuration automatically. Enable Power logging manually following [HDT's guide](https://github.com/HearthSim/Hearthstone-Deck-Tracker/wiki/Setting-up-the-log.config).
 
-无需安装项目依赖即可诊断现有日志：
+应用只读取 Power.log，不会自动修改炉石配置。请参考 HDT 的[日志配置说明](https://github.com/HearthSim/Hearthstone-Deck-Tracker/wiki/Setting-up-the-log.config)手动启用。
+
+The app auto-discovers your Power.log across multiple locations:
+
+应用自动在多个位置发现 Power.log：
+
+- Configured path → `%LOCALAPPDATA%\Blizzard\Hearthstone\Logs\Power.log`
+- Hearthstone Deck Tracker config → Session directories (`Hearthstone_DateTime\Power.log`)
+- Alternatively: reads HDT's config and switches to the latest session log
+
+You can also diagnose any existing Power.log without installing dependencies:
 
 ```powershell
 npm run log:diagnose -- `
-  --log "E:\Hearthstone\Logs\Hearthstone_日期时间\Power.log"
+  --log "E:\Hearthstone\Logs\Hearthstone_2026-06-08_12-00-00\Power.log"
 ```
 
-诊断命令直接调用应用中的 `PowerLogParser`，输出最近对局的模式、build、手牌和场面摘要。
+This runs the app's `PowerLogParser` directly, outputting a summary of the latest game's mode, build, hand, and board.
 
-## 卡牌快照
+---
 
-`assets/card-catalog.zhCN.json` 已内置 `zhCN` 标准模式卡牌快照。应用会在缺少卡牌元数据、视觉特征或 `Power.log` build 与快照不一致时阻止分析，避免输出不可靠建议。
+## 🃏 Card Catalog · 卡牌目录
 
-快照记录卡牌 ID、名称、文本、费用、标准模式标记和本地图像特征哈希；发布包不包含完整卡图。
+`assets/card-catalog.zhCN.json` ships with a built-in snapshot of Standard-mode cards in Chinese. The app blocks analysis if card metadata, visual features, or the Power.log build number don't match — preventing unreliable suggestions.
 
-当前快照使用 HearthstoneJSON `243002` `zhCN` 卡牌数据和 `scripts/standard-sets.2026-06.json` 标准卡池清单生成：
+`assets/card-catalog.zhCN.json` 内置了简体中文标准模式卡牌快照。应用会在卡牌元数据、视觉特征或 Power.log build 不一致时阻止分析，避免输出不可靠建议。
+
+Each card record stores: ID, name, text, cost, Standard flag, and a local dHash of its art. The distribution package does not include full card images.
+
+每条记录包含：卡牌 ID、名称、文本、费用、标准模式标记和本地图像 dHash；发布包不包含完整卡图。
+
+Build and validate locally:
 
 ```powershell
 node scripts/build-card-catalog.mjs `
@@ -123,53 +296,78 @@ node scripts/build-card-catalog.mjs `
 npm run catalog:validate
 ```
 
-- `cards.zhCN.json` 可以是官方卡牌 API 返回的 `cards` 数组或包含该数组的对象。
-- `standard-sets.2026-06.json` 是标准卡池的 set 名称数组，也兼容 set ID 数组。
-- `image-features.json` 是 `cardId` 到 16 位十六进制 dHash 的对象。
-- `game-build` 必须与当前 `Power.log` 中的 `BuildNumber` 一致，否则应用会阻止分析。
-- 构建脚本只读取本地文件，不会下载资源。
+---
 
-如果本机已安装 Hearthstone Deck Tracker，也可以直接从其现有
-`CardDefs.base.xml` 生成元数据：
+## 🧪 Testing · 测试
+
+The project uses [Vitest](https://vitest.dev/) with **11 test suites** covering core parsing, validation, client communication, and UI state.
 
 ```powershell
-npm run catalog:import-hdt -- `
-  --xml "$env:APPDATA\HearthstoneDeckTracker\CardDefs\CardDefs.base.xml" `
-  --sets .\local-data\standard-set-ids.json `
-  --features .\local-data\image-features.json `
-  --out .\assets\card-catalog.zhCN.json
+npm test        # Run all tests
+npm run typecheck  # TypeScript type checking (both configs)
 ```
 
-如果已经有按 `cardId` 命名的本地卡牌美术图片目录，可生成视觉特征：
+| Test Suite | What It Covers | 测试内容 |
+|-----------|---------------|---------|
+| `power-log-parser.test.ts` | Full log parsing, dedup, entity descriptions, player inference, card ID preservation | 完整日志解析、去重、实体描述、玩家推断 |
+| `power-log-watcher.test.ts` | Polling, file rotation, truncation handling | 轮询、文件轮转、截断处理 |
+| `power-log-locator.test.ts` | Log discovery across multiple sources | 多源日志发现 |
+| `agent-client.test.ts` | Sanitization, action hints, retry, JSON parsing, transport fallback | 脱敏、动作提示、重试、JSON 解析 |
+| `analysis-validator.test.ts` | Snapshot and result validation | 快照与结果校验 |
+| `snapshot-sanitizer.test.ts` | Privacy boundary enforcement | 隐私边界保障 |
+| `snapshot-enricher.test.ts` | Catalog data enrichment | 卡牌目录数据注入 |
+| `visual-validator.test.ts` | dHash screenshot matching | dHash 截图匹配 |
+| `card-catalog.test.ts` | Catalog loading and querying | 卡牌目录加载与查询 |
+| `settings-store.test.ts` | Settings persistence and normalization | 设置持久化与归约 |
+| `app-status.test.ts` | App status object construction | 应用状态构建 |
 
-```powershell
-npm run features:build -- `
-  --images .\local-data\card-art `
-  --out .\local-data\image-features.json
-```
+---
 
-视觉特征工具只读取本地图片并写入哈希，不会把图片打包进应用。
+## 🔧 Development Scripts · 开发脚本
 
-Windows 环境下也提供 PowerShell 批处理脚本，可合并已有特征并按 `cardId` 模板下载缺失卡牌瓦片生成 dHash：
+| Command | Description | 说明 |
+|---------|------------|------|
+| `npm run dev` | Start dev mode (Vite + tsc + Electron) | 启动开发模式 |
+| `npm run build` | Build renderer + main process | 构建渲染进程和主进程 |
+| `npm test` | Run all tests | 运行所有测试 |
+| `npm run typecheck` | TypeScript type checking | TypeScript 类型检查 |
+| `npm run package` | Build Windows NSIS installer | 生成 Windows 安装包 |
+| `npm run catalog:build` | Build card catalog from HearthstoneJSON | 从 HearthstoneJSON 构建卡牌目录 |
+| `npm run catalog:validate` | Validate card catalog integrity | 验证卡牌目录完整性 |
+| `npm run catalog:import-hdt` | Import card defs from HDT | 从 HDT 导入卡牌定义 |
+| `npm run features:build` | Build dHash visual features | 构建 dHash 视觉特征 |
+| `npm run log:diagnose` | Diagnose a Power.log file | 诊断 Power.log 文件 |
 
-```powershell
-.\scripts\build-image-features.ps1 `
-  -Merge .\local-data\image-features.cardtiles.json `
-  -CardIds .\local-data\missing-feature-card-ids.json `
-  -UrlTemplate "https://art.hearthstonejson.com/v1/tiles/{cardId}.jpg" `
-  -Out .\local-data\image-features.combined.json
-```
+---
 
-## 隐私
+## 🛡️ Privacy & Compliance · 隐私与合规
 
-- 远程请求只包含经过白名单处理的结构化局面。
-- 不发送截图、原始日志、玩家名称或 API Key。
-- SQLite 历史位于 Electron 用户数据目录。
-- 普通设置文件不包含 API Key。
+### Privacy · 隐私
 
-## 合规
+- **Remote requests contain only sanitized, structured game state.** Player names, raw entity tags, and timestamps are stripped before transmission.
+- **Screenshots are captured only for local dHash validation and are never sent to any AI provider.**
+- **API keys are encrypted** via Electron's `safeStorage` (Windows DPAPI) — never stored in plain-text settings files.
+- **SQLite history** resides in the Electron user data directory and is not uploaded anywhere.
+- **Diagnostic logs** record snapshot summaries, visual validation results, agent responses, parsing errors, and validation errors — but never API keys or screenshots.
 
-实时玩法建议可能违反游戏规则或带来账号风险。小范围测试前应重新核对：
+### Compliance · 合规
+
+Real-time gameplay suggestions may be against Blizzard's terms of service. Before enabling live recommendations in official matches, verify with:
 
 - [Blizzard EULA](https://www.blizzard.com/en-us/company/legal/eula.html)
 - [Blizzard Anti-Cheating Agreement](https://www.blizzard.com/legal/cd5930c0-2784-420c-a23d-1e0d6ff8599b/anti-cheating-vereinbarung)
+
+Live recommendations are disabled by default. Enable only after confirming authorization and accepting account and compliance risks.
+
+---
+
+## 📄 License · 许可
+
+MIT
+
+---
+
+<p align="center">
+  <sub>Built with ❤️ for the Hearthstone community · 为炉石社区打造</sub><br />
+  <sub>This project is not affiliated with Blizzard Entertainment, Inc.</sub>
+</p>

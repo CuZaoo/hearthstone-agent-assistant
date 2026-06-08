@@ -1,4 +1,22 @@
-import type { AnalysisResult } from "../shared/types.js";
+import type { AnalysisResult, ApiFormat } from "../shared/types.js";
+
+export function extractUsage(payload: unknown, format: ApiFormat): AnalysisResult["usage"] {
+  const data = payload as Record<string, unknown>;
+  const u = data.usage as Record<string, unknown> | undefined;
+  if (!u) return undefined;
+  if (format === "responses") {
+    return {
+      promptTokens: u.input_tokens as number | undefined,
+      completionTokens: u.output_tokens as number | undefined,
+      totalTokens: u.total_tokens as number | undefined,
+    };
+  }
+  return {
+    promptTokens: u.prompt_tokens as number | undefined,
+    completionTokens: u.completion_tokens as number | undefined,
+    totalTokens: u.total_tokens as number | undefined,
+  };
+}
 
 export function extractResponsesText(payload: unknown): string {
   const data = payload as {
@@ -31,26 +49,25 @@ export function extractChatCompletionsText(payload: unknown): string {
 
 export function parseAnalysisResult(text: string): AnalysisResult {
   const json = extractJsonObject(text);
-  let parsed: AnalysisResult;
+  let raw: Record<string, unknown>;
   try {
-    parsed = JSON.parse(json) as AnalysisResult;
+    raw = JSON.parse(json) as Record<string, unknown>;
   } catch {
     throw new Error("Agent 返回了无效 JSON。");
   }
   if (
-    typeof parsed.snapshotRevision !== "string" ||
-    typeof parsed.summary !== "string" ||
-    !Array.isArray(parsed.warnings) ||
-    !Array.isArray(parsed.candidates)
+    typeof raw.snapshotRevision !== "string" ||
+    !Array.isArray(raw.candidates)
   ) {
-    throw new Error("Agent 返回 JSON 结构无效：缺少 snapshotRevision、summary、warnings 或 candidates。");
+    throw new Error("Agent 返回 JSON 结构无效：缺少 snapshotRevision 或 candidates。");
   }
-  return {
-    ...parsed,
-    candidates: parsed.candidates.map((candidate) => ({
+  const parsed: AnalysisResult = {
+    snapshotRevision: raw.snapshotRevision,
+    summary: typeof raw.summary === "string" ? raw.summary : "",
+    candidates: raw.candidates.map((candidate: Record<string, unknown>) => ({
       ...candidate,
       actions: Array.isArray(candidate.actions)
-        ? candidate.actions.map((action) => ({
+        ? candidate.actions.map((action: Record<string, unknown>) => ({
             ...action,
             sourceEntityId: action.sourceEntityId ?? undefined,
             sourceCardId: action.sourceCardId ?? undefined,
@@ -58,8 +75,10 @@ export function parseAnalysisResult(text: string): AnalysisResult {
             targetSide: action.targetSide ?? undefined,
           }))
         : [],
-    })),
+    })) as AnalysisResult["candidates"],
+    warnings: Array.isArray(raw.warnings) ? (raw.warnings as string[]) : [],
   };
+  return parsed;
 }
 
 export function parseConnectionTestResult(text: string): {

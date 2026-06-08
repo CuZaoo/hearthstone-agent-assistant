@@ -211,7 +211,7 @@ describe("AgentClient", () => {
         chatResponseFor({ ok: true, message: "连接正常" }),
       );
     const client = new AgentClient(
-      { ...settings, transport: "chat-completions" },
+      { ...settings, apiUrl: "https://example.test/v1/chat/completions", format: "chat-completions" },
       "secret-key",
       catalog,
     );
@@ -233,9 +233,9 @@ describe("AgentClient", () => {
     const client = new AgentClient(
       {
         ...settings,
-        baseUrl: "http://10.10.101.31:8001/v1/chat/completions",
+        apiUrl: "http://10.10.101.31:8001/v1/chat/completions",
         model: "qwen3.6-35b",
-        transport: "chat-completions",
+        format: "chat-completions",
       },
       "secret-key",
       catalog,
@@ -248,12 +248,12 @@ describe("AgentClient", () => {
     );
   });
 
-  it("uses json_object directly for chat completions analysis", async () => {
+  it("tries json_schema first for chat completions analysis", async () => {
     const fetchMock = vi
       .spyOn(globalThis, "fetch")
       .mockResolvedValueOnce(chatResponseFor(validResult()));
     const client = new AgentClient(
-      { ...settings, transport: "chat-completions" },
+      { ...settings, apiUrl: "https://example.test/v1/chat/completions", format: "chat-completions" },
       "secret-key",
       catalog,
     );
@@ -263,9 +263,8 @@ describe("AgentClient", () => {
     expect(result.summary).toBe("结束回合");
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const body = String(fetchMock.mock.calls[0]?.[1]?.body);
-    expect(body).toContain("json_object");
-    expect(body).toContain("不要返回格式定义");
-    expect(body).not.toContain("additionalProperties");
+    expect(body).toContain("json_schema");
+    expect(body).toContain("additionalProperties");
     expect(body).toContain("max_tokens");
     expect(body).not.toContain("secret-key");
   });
@@ -289,7 +288,7 @@ describe("AgentClient", () => {
       ),
     );
     const client = new AgentClient(
-      { ...settings, transport: "chat-completions" },
+      { ...settings, apiUrl: "https://example.test/v1/chat/completions", format: "chat-completions" },
       "secret-key",
       catalog,
     );
@@ -317,7 +316,7 @@ describe("AgentClient", () => {
       )
       .mockResolvedValueOnce(chatResponseFor(validResult()));
     const client = new AgentClient(
-      { ...settings, transport: "chat-completions" },
+      { ...settings, apiUrl: "https://example.test/v1/chat/completions", format: "chat-completions" },
       "secret-key",
       catalog,
     );
@@ -338,7 +337,7 @@ describe("AgentClient", () => {
       .mockResolvedValueOnce(new Response("bad schema", { status: 400 }))
       .mockResolvedValueOnce(chatResponseFor({ ok: true, message: "连接正常" }));
     const client = new AgentClient(
-      { ...settings, transport: "chat-completions" },
+      { ...settings, apiUrl: "https://example.test/v1/chat/completions", format: "chat-completions" },
       "secret-key",
       catalog,
     );
@@ -353,9 +352,9 @@ describe("AgentClient", () => {
 });
 
 const settings = {
-  baseUrl: "https://example.test/v1",
+  apiUrl: "https://example.test/v1/responses",
   model: "test-model",
-  transport: "responses" as const,
+  format: "responses" as const,
   timeoutMs: 2_000,
 };
 

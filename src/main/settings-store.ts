@@ -1,7 +1,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
-import { DEFAULT_SETTINGS } from "../shared/defaults.js";
-import type { AgentProfile, AppSettings, Transport } from "../shared/types.js";
+import { DEFAULT_PROMPT_CONFIG, DEFAULT_SETTINGS } from "../shared/defaults.js";
+import type { AgentProfile, ApiFormat, AppSettings, PromptConfig } from "../shared/types.js";
 
 export class SettingsStore {
   constructor(private readonly path: string) {}
@@ -20,9 +20,9 @@ export class SettingsStore {
                 {
                   id: "default",
                   name: "默认 Agent",
-                  baseUrl: parsed.baseUrl ?? DEFAULT_SETTINGS.baseUrl,
+                  apiUrl: parsed.apiUrl ?? DEFAULT_SETTINGS.apiUrl,
                   model: parsed.model ?? DEFAULT_SETTINGS.model,
-                  transport: parsed.transport ?? DEFAULT_SETTINGS.transport,
+                  format: parsed.format ?? DEFAULT_SETTINGS.format,
                   timeoutMs: parsed.timeoutMs ?? DEFAULT_SETTINGS.timeoutMs,
                 },
               ],
@@ -56,9 +56,9 @@ function normalizeSettings(settings: Partial<AppSettings>): AppSettings {
     {
       id: "default",
       name: "默认 Agent",
-      baseUrl: DEFAULT_SETTINGS.baseUrl,
+      apiUrl: DEFAULT_SETTINGS.apiUrl,
       model: DEFAULT_SETTINGS.model,
-      transport: DEFAULT_SETTINGS.transport,
+      format: DEFAULT_SETTINGS.format,
       timeoutMs: DEFAULT_SETTINGS.timeoutMs,
     };
   const hotkeys = asRecord(settings.hotkeys) ?? DEFAULT_SETTINGS.hotkeys;
@@ -66,9 +66,9 @@ function normalizeSettings(settings: Partial<AppSettings>): AppSettings {
     powerLogPath: stringValue(settings.powerLogPath, DEFAULT_SETTINGS.powerLogPath),
     agents,
     activeAgentId: activeAgent.id,
-    baseUrl: activeAgent.baseUrl,
+    apiUrl: activeAgent.apiUrl,
     model: activeAgent.model,
-    transport: activeAgent.transport,
+    format: activeAgent.format,
     timeoutMs: activeAgent.timeoutMs,
     maxCandidates: clampNumber(settings.maxCandidates, DEFAULT_SETTINGS.maxCandidates, 1, 5),
     overlayVisible: booleanValue(settings.overlayVisible, DEFAULT_SETTINGS.overlayVisible),
@@ -109,9 +109,9 @@ function normalizeAgents(settings: Partial<AppSettings>): AgentProfile[] {
           {
             id: "default",
             name: "默认 Agent",
-            baseUrl: settings.baseUrl,
+            apiUrl: settings.apiUrl,
             model: settings.model,
-            transport: settings.transport,
+            format: settings.format,
             timeoutMs: settings.timeoutMs,
           },
         ];
@@ -121,11 +121,32 @@ function normalizeAgents(settings: Partial<AppSettings>): AgentProfile[] {
 function normalizeAgent(agent: Partial<AgentProfile>, index: number): AgentProfile {
   return {
     id: stringValue(agent.id, `agent-${index + 1}`),
-    name: stringValue(agent.name, `Agent ${index + 1}`),
-    baseUrl: stringValue(agent.baseUrl, DEFAULT_SETTINGS.baseUrl),
+    name: typeof agent.name === "string" ? agent.name : `Agent ${index + 1}`,
+    apiUrl: stringValue(agent.apiUrl, DEFAULT_SETTINGS.apiUrl),
     model: stringValue(agent.model, DEFAULT_SETTINGS.model),
-    transport: transportValue(agent.transport, DEFAULT_SETTINGS.transport),
+    format: formatValue(agent.format, DEFAULT_SETTINGS.format),
     timeoutMs: clampNumber(agent.timeoutMs, DEFAULT_SETTINGS.timeoutMs, 1_000, 60_000),
+    promptConfig: normalizePromptConfig(agent.promptConfig),
+  };
+}
+
+function normalizePromptConfig(value: unknown): PromptConfig | undefined {
+  const raw = asRecord(value);
+  if (!raw) return undefined;
+  const sections = asRecord(raw.systemPromptSections);
+  return {
+    systemPromptSections: {
+      roleSetting: booleanValue(sections?.roleSetting, DEFAULT_PROMPT_CONFIG.systemPromptSections.roleSetting),
+      infoConstraint: booleanValue(sections?.infoConstraint, DEFAULT_PROMPT_CONFIG.systemPromptSections.infoConstraint),
+      goalDefinition: booleanValue(sections?.goalDefinition, DEFAULT_PROMPT_CONFIG.systemPromptSections.goalDefinition),
+      refConstraint: booleanValue(sections?.refConstraint, DEFAULT_PROMPT_CONFIG.systemPromptSections.refConstraint),
+      fieldConstraint: booleanValue(sections?.fieldConstraint, DEFAULT_PROMPT_CONFIG.systemPromptSections.fieldConstraint),
+      descConstraint: booleanValue(sections?.descConstraint, DEFAULT_PROMPT_CONFIG.systemPromptSections.descConstraint),
+      coinConstraint: booleanValue(sections?.coinConstraint, DEFAULT_PROMPT_CONFIG.systemPromptSections.coinConstraint),
+      candidateConstraint: booleanValue(sections?.candidateConstraint, DEFAULT_PROMPT_CONFIG.systemPromptSections.candidateConstraint),
+      formatConstraint: booleanValue(sections?.formatConstraint, DEFAULT_PROMPT_CONFIG.systemPromptSections.formatConstraint),
+    },
+    customUserPrompt: stringValue(raw.customUserPrompt, ""),
   };
 }
 
@@ -148,6 +169,6 @@ function clampNumber(value: unknown, fallback: number, min: number, max: number)
   return Math.min(max, Math.max(min, number));
 }
 
-function transportValue(value: unknown, fallback: Transport): Transport {
+function formatValue(value: unknown, fallback: ApiFormat): ApiFormat {
   return value === "responses" || value === "chat-completions" ? value : fallback;
 }

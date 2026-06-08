@@ -34,17 +34,25 @@ export function buildLocalActionHints(
     !snapshot.self.hero.exhausted &&
     (snapshot.self.hero.attack ?? snapshot.self.weapon?.attack ?? 0) > 0;
 
+  const heroAtk = heroCanAttack
+    ? `；己方英雄可攻击(${snapshot.self.hero.attack ?? snapshot.self.weapon?.attack ?? 0}攻)`
+    : "";
+
   return [
     "本地合法动作提示：",
-    `- 当前法力：${snapshot.self.mana}/${snapshot.self.maxMana}；己方场面：${snapshot.self.board.length}/7；对手场面：${snapshot.opponent.board.length}/7。`,
+    `- 法力：${snapshot.self.mana}/${snapshot.self.maxMana}`,
+    `- 己方场面(${snapshot.self.board.length}/7)：${formatBoardCardList(snapshot.self.board, catalog)}`,
+    `- 对手场面(${snapshot.opponent.board.length}/7)：${formatBoardCardList(snapshot.opponent.board, catalog)}`,
     `- 当前可直接打出的手牌：${formatCardList(directlyPlayable, catalog)}。`,
     `- 使用临时法力后才可打出的手牌：${formatCardList(coinPlayable, catalog)}。`,
     `- 临时法力牌：${formatCardList(coinCards, catalog)}；只有后续会立刻消费新增法力时才考虑。`,
-    `- 可攻击来源：${formatCardList(attackers, catalog)}${heroCanAttack ? "；己方英雄可攻击" : ""}。`,
-    `- 对手嘲讽：${formatCardList(taunts, catalog)}。若存在嘲讽，攻击目标必须优先为嘲讽。`,
+    `- 可攻击来源：${attackers.length > 0 ? attackers.map(c => `#${c.entityId}(${c.attack ?? 0}攻)`).join("；") : "无"}${heroAtk}。`,
+    ...(taunts.length > 0
+      ? [`- 对手嘲讽(需优先攻击)：${taunts.map(t => `#${t.entityId}(${(t.health ?? 0) - (t.damage ?? 0)}血${t.divineShield ? ", 圣盾" : ""})`).join("；")}。`]
+      : []),
     `- 本地可执行动作清单(JSON)：${JSON.stringify(buildExecutableActionList(request, catalog))}`,
     "- 生成路线时优先组合上面的 JSON 动作清单；除 end-turn 外，不要发明清单中没有 sourceEntityId 的动作。",
-    "- 如果没有有价值动作，可以推荐直接结束回合；如果推荐保留资源，理由必须说明为什么优于当前可用动作。",
+    "- 如果没有价值动作可以推荐直接结束回合；保留资源必须说明为什么优于当前可用动作。",
   ].join("\n");
 }
 
@@ -149,6 +157,8 @@ function legalAttackTargets(snapshot: AnalysisRequest["snapshot"]) {
       targetSide: "opponent" as const,
       cardName: cardName(card, undefined),
       taunt: Boolean(card.taunt),
+      health: (card.health ?? 0) - (card.damage ?? 0),
+      divineShield: Boolean(card.divineShield),
     }),
   );
   if (taunts.length > 0) {
@@ -163,6 +173,8 @@ function legalAttackTargets(snapshot: AnalysisRequest["snapshot"]) {
             targetSide: "opponent" as const,
             cardName: snapshot.opponent.hero.name ?? snapshot.opponent.hero.cardId ?? "对手英雄",
             hero: true,
+            health: (snapshot.opponent.hero.health ?? 0) - (snapshot.opponent.hero.damage ?? 0),
+            divineShield: false,
           },
         ]
       : []),
@@ -180,6 +192,26 @@ function formatCardList(cards: CardReference[], catalog: CardCatalog): string {
       return `#${card.entityId} ${cardName(card, catalog)}(${card.cardId ?? "无ID"}, ${cost}费)`;
     })
     .join("；");
+}
+
+function formatBoardCardList(cards: CardReference[], catalog?: CardCatalog): string {
+  if (cards.length === 0) return "无";
+  return cards.slice(0, 12).map((card) => {
+    const curHealth = (card.health ?? 0) - (card.damage ?? 0);
+    const damageInfo = (card.damage ?? 0) > 0 ? `[受伤${card.damage}]` : "";
+    const atk = card.attack ?? 0;
+    const atkStr = atk > 0 ? `${atk}攻/` : "";
+    const keywords = [
+      card.taunt ? "嘲讽" : "",
+      card.divineShield ? "圣盾" : "",
+      card.lifesteal ? "吸血" : "",
+      card.poisonous ? "剧毒" : "",
+      card.dormant ? "休眠" : "",
+      card.exhausted ? "已行动" : "",
+    ].filter(Boolean).join("、");
+    const tags = keywords ? `, ${keywords}` : "";
+    return `#${card.entityId} ${cardName(card, catalog)}(${atkStr}${curHealth}血${damageInfo}${tags})`;
+  }).join("；");
 }
 
 function cardName(card: CardReference, catalog?: CardCatalog): string {

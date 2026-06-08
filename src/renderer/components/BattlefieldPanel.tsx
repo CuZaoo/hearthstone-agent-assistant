@@ -12,7 +12,7 @@ export function BattlefieldPanel({ snapshot, busy, onStopAnalysis }: Battlefield
     return (
       <div className="battlefield">
         <div className="empty-state">
-          <p>等待 Power.log 产生对局事件</p>
+          <p>等待对局日志产生事件</p>
           <small>启动炉石并进入对局后自动检测</small>
         </div>
       </div>

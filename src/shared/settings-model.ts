@@ -5,9 +5,9 @@ export function getActiveAgent(settings: AppSettings): AgentProfile {
     settings.agents[0] ?? {
       id: "default",
       name: "默认 Agent",
-      baseUrl: settings.baseUrl,
+      apiUrl: settings.apiUrl,
       model: settings.model,
-      transport: settings.transport,
+      format: settings.format,
       timeoutMs: settings.timeoutMs,
     };
 }
@@ -34,9 +34,9 @@ export function syncLegacyAgentFields(
   return {
     ...settings,
     activeAgentId: agent.id,
-    baseUrl: agent.baseUrl,
+    apiUrl: agent.apiUrl,
     model: agent.model,
-    transport: agent.transport,
+    format: agent.format,
     timeoutMs: agent.timeoutMs,
   };
 }

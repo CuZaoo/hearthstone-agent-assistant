@@ -3,10 +3,16 @@ import { AdvisorPanel } from "./AdvisorPanel";
 import { BattlefieldPanel } from "./BattlefieldPanel";
 import { DashboardHeader } from "./DashboardHeader";
 import { DossierBar } from "./DossierBar";
-import { HearthstoneConfirm } from "./HearthstoneConfirm";
 import { GuideOverlay } from "./GuideOverlay";
+import { HearthstoneConfirm } from "./HearthstoneConfirm";
+import { HistoryPanel } from "./HistoryPanel";
+import { DebugPanel } from "./DebugPanel";
+import { LogPanel } from "./LogPanel";
 import { SettingsPanel } from "./SettingsPanel";
-import type { AgentProfile, AppStatus } from "../../shared/types";
+import { StatsPanel } from "./StatsPanel";
+import { ChangelogPanel } from "./ChangelogPanel";
+import type { AgentProfile, AppSettings, AppStatus, ProviderPreset } from "../../shared/types";
+import { DEFAULT_PROMPT_CONFIG } from "../../shared/defaults";
 import {
   getActiveAgent,
   syncLegacyAgentFields,
@@ -20,12 +26,17 @@ export function Dashboard({ status }: { status: AppStatus }) {
   const [busyElapsed, setBusyElapsed] = useState(0);
   const [guideOpen, setGuideOpen] = useState(!status.settings.guideDismissed);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [logsOpen, setLogsOpen] = useState(false);
+  const [debugOpen, setDebugOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [statsOpen, setStatsOpen] = useState(false);
+  const [changelogOpen, setChangelogOpen] = useState(false);
   const [closeConfirmOpen, setCloseConfirmOpen] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [selectedCandidate, setSelectedCandidate] = useState<number | null>(null);
 
   const activeAgent = getActiveAgent(settings);
 
-  useEffect(() => setSettings(status.settings), [status.settings]);
   useEffect(() => {
     void window.hearthstoneAgent.hasApiKey(activeAgent.id).then(setHasApiKey);
   }, [activeAgent.id]);
@@ -50,38 +61,57 @@ export function Dashboard({ status }: { status: AppStatus }) {
   };
 
   const updateActiveAgent = (patch: Partial<AgentProfile>) => {
-    setSettings(updateAgent(settings, activeAgent.id, patch));
+    const next = updateAgent(settings, activeAgent.id, patch);
+    setSettings(next);
+    void window.hearthstoneAgent.saveSettings(next);
+  };
+
+  const updateSettings = (next: AppSettings) => {
+    setSettings(next);
+    void window.hearthstoneAgent.saveSettings(next);
   };
 
   const switchAgent = (agentId: string) => {
     const nextAgent = settings.agents.find(agent => agent.id === agentId);
     if (!nextAgent) return;
-    setSettings(syncLegacyAgentFields({ ...settings, activeAgentId: agentId }, nextAgent));
+    const next = syncLegacyAgentFields({ ...settings, activeAgentId: agentId }, nextAgent);
+    setSettings(next);
+    void window.hearthstoneAgent.saveSettings(next);
     setApiKey("");
   };
 
-  const addAgent = () => {
+  const addAgent = (preset?: ProviderPreset) => {
     const nextAgent: AgentProfile = {
       id: `agent-${Date.now()}`,
-      name: `Agent ${settings.agents.length + 1}`,
-      baseUrl: "http://127.0.0.1:8001",
-      model: "",
-      transport: "chat-completions",
+      name: preset?.label ?? `Agent ${settings.agents.length + 1}`,
+      apiUrl: preset?.apiUrl ?? "http://127.0.0.1:8001/v1/chat/completions",
+      model: preset?.model ?? "",
+      format: preset?.format ?? "chat-completions",
       timeoutMs: activeAgent.timeoutMs,
+      promptConfig: { ...DEFAULT_PROMPT_CONFIG },
     };
-    setSettings(syncLegacyAgentFields({
+    const next = syncLegacyAgentFields({
       ...settings,
       agents: [...settings.agents, nextAgent],
       activeAgentId: nextAgent.id,
-    }, nextAgent));
+    }, nextAgent);
+    setSettings(next);
+    void window.hearthstoneAgent.saveSettings(next);
     setApiKey("");
   };
 
-  const removeActiveAgent = () => {
-    if (settings.agents.length <= 1) return;
+  const doRemoveActiveAgent = () => {
     const remaining = settings.agents.filter(agent => agent.id !== activeAgent.id);
-    setSettings(syncLegacyAgentFields({ ...settings, agents: remaining, activeAgentId: remaining[0]?.id }, remaining[0]));
+    const next = syncLegacyAgentFields({ ...settings, agents: remaining, activeAgentId: remaining[0]?.id }, remaining[0]);
+    setSettings(next);
     setApiKey("");
+    setDeleteConfirmOpen(false);
+    void window.hearthstoneAgent.saveSettings(next);
+  };
+
+  const requestRemoveAgent = () => {
+    if (settings.agents.length <= 1) return;
+    setDeleteConfirmOpen(true);
   };
 
   const dismissGuide = () => {
@@ -103,6 +133,10 @@ export function Dashboard({ status }: { status: AppStatus }) {
           onOpenSettings={() => setSettingsOpen(true)}
           onToggleOverlay={() => void window.hearthstoneAgent.toggleOverlay()}
           onOpenGuide={() => setGuideOpen(true)}
+          onOpenLogs={() => setLogsOpen(true)}
+          onOpenDebug={() => setDebugOpen(true)}
+          onOpenHistory={() => setHistoryOpen(true)}
+          onOpenStats={() => setStatsOpen(true)}
           onMinimize={() => void window.hearthstoneAgent.minimizeWindow()}
           onMaximize={() => void window.hearthstoneAgent.maximizeWindow()}
           onClose={() => setCloseConfirmOpen(true)}
@@ -127,9 +161,12 @@ export function Dashboard({ status }: { status: AppStatus }) {
             onSelectCandidate={setSelectedCandidate}
           />
         </div>
+        <div className="dashboard-footer">
+          <span className="changelog-link" onClick={() => setChangelogOpen(true)}>v1.2.0</span>
+        </div>
       </div>
 
-      {guideOpen && <GuideOverlay settings={settings} onClose={dismissGuide} />}
+      {guideOpen && <GuideOverlay settings={settings} powerLogConfig={status.powerLogConfig} onClose={dismissGuide} />}
 
       {closeConfirmOpen && (
         <HearthstoneConfirm
@@ -142,19 +179,40 @@ export function Dashboard({ status }: { status: AppStatus }) {
         />
       )}
 
+      {deleteConfirmOpen && (
+        <HearthstoneConfirm
+          title={`删除 Agent「${activeAgent.name}」`}
+          message="删除后该 Agent 的配置将被移除，此操作不可撤销。"
+          confirmText="确认删除"
+          cancelText="取消"
+          onCancel={() => setDeleteConfirmOpen(false)}
+          onConfirm={doRemoveActiveAgent}
+        />
+      )}
+
+      {logsOpen && <LogPanel onClose={() => setLogsOpen(false)} />}
+
+      {debugOpen && <DebugPanel onClose={() => setDebugOpen(false)} />}
+
+      {historyOpen && <HistoryPanel onClose={() => setHistoryOpen(false)} />}
+
+      {statsOpen && <StatsPanel onClose={() => setStatsOpen(false)} />}
+
+      {changelogOpen && <ChangelogPanel onClose={() => setChangelogOpen(false)} />}
+
       {settingsOpen && (
         <SettingsPanel
           settings={settings}
           apiKey={apiKey}
           hasApiKey={hasApiKey}
           activeAgent={activeAgent}
-          onUpdateSettings={setSettings}
+          onUpdateSettings={updateSettings}
           onSetApiKey={setApiKey}
           onSave={save}
           onClose={() => setSettingsOpen(false)}
           onSwitchAgent={switchAgent}
           onAddAgent={addAgent}
-          onRemoveAgent={removeActiveAgent}
+          onRemoveAgent={requestRemoveAgent}
           onUpdateAgent={updateActiveAgent}
         />
       )}

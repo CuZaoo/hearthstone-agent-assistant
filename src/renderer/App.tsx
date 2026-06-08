@@ -1,10 +1,14 @@
 import { useEffect, useState } from "react";
 import { Dashboard } from "./components/Dashboard";
+import { FallbackPrompt } from "./components/FallbackPrompt";
 import { OverlayBar } from "./components/OverlayBar";
+import { BallView } from "./components/BallView";
 import type { AppStatus } from "../shared/types";
 
 export function App() {
-  const overlay = new URLSearchParams(window.location.search).get("view") === "overlay";
+  const params = new URLSearchParams(window.location.search);
+  const overlay = params.get("view") === "overlay";
+  const ball = params.get("view") === "ball";
   const [status, setStatus] = useState<AppStatus>();
   const [bootError, setBootError] = useState<string>();
 
@@ -31,11 +35,11 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    if (overlay) {
+    if (overlay || ball) {
       document.body.style.background = "transparent";
       document.body.style.backgroundImage = "none";
     }
-  }, [overlay]);
+  }, [overlay, ball]);
 
   if (bootError) {
     return <div className="app-shell"><div className="dashboard" style={{padding:40,textAlign:"center",color:"#d56c61"}}>启动失败：{bootError}</div></div>;
@@ -43,7 +47,12 @@ export function App() {
   if (!status) {
     return <div className="app-shell"><div className="dashboard" style={{padding:40,textAlign:"center",color:"#8a7a66"}}>正在启动…</div></div>;
   }
-  return overlay ? <OverlayBar status={status} /> : <Dashboard status={status} />;
+  return (
+    <>
+      {overlay ? <OverlayBar status={status} /> : ball ? <BallView status={status} /> : <Dashboard status={status} />}
+      <FallbackPrompt />
+    </>
+  );
 }
 
 

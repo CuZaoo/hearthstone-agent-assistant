@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { readFile, readdir, stat } from "node:fs/promises";
+import { readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 
 export interface PowerLogLocation {
@@ -241,4 +241,78 @@ function decodeXml(value: string): string {
     .replaceAll("&gt;", ">")
     .replaceAll("&quot;", '"')
     .replaceAll("&apos;", "'");
+}
+
+export async function findHearthstoneDirectory(): Promise<string | null> {
+  const hdtDir = await readHearthstoneDeckTrackerInstallRoot();
+  if (hdtDir) return hdtDir;
+
+  const programFiles = process.env["ProgramFiles(x86)"] ?? process.env.ProgramFiles;
+  if (programFiles) {
+    const candidate = join(programFiles, "Hearthstone");
+    if (existsSync(candidate)) return candidate;
+  }
+  return null;
+}
+
+export async function enablePowerLoggingInOptionsFile(): Promise<{
+  ok: boolean;
+  message: string;
+}> {
+  const hsDir = await findHearthstoneDirectory();
+  if (!hsDir) {
+    return {
+      ok: false,
+      message: "未找到炉石安装目录，请确认炉石已安装。",
+    };
+  }
+
+  const optionsPath = join(hsDir, "options.txt");
+  let lines: string[];
+  try {
+    const content = await readFile(optionsPath, "utf8");
+    lines = content.split(/\r?\n/);
+  } catch {
+    lines = [];
+  }
+
+  let found = false;
+  let changed = false;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (!line) continue;
+    const trimmed = line.trim();
+    if (/^displaypowerlog=/i.test(trimmed)) {
+      found = true;
+      if (trimmed !== "displaypowerlog=1") {
+        lines[i] = "displaypowerlog=1";
+        changed = true;
+      }
+      break;
+    }
+  }
+  if (!found) {
+    lines.push("displaypowerlog=1");
+    changed = true;
+  }
+
+  if (!changed) {
+    return {
+      ok: true,
+      message: `对局日志记录已启用 (${optionsPath})`,
+    };
+  }
+
+  try {
+    await writeFile(optionsPath, lines.join("\r\n"), "utf8");
+    return {
+      ok: true,
+      message: `已成功写入 ${optionsPath}`,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      message: `写入 options.txt 失败：${error instanceof Error ? error.message : String(error)}`,
+    };
+  }
 }
