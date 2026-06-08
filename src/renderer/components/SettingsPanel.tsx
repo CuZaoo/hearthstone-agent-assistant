@@ -208,7 +208,7 @@ export function SettingsPanel({
               <label></label>
               <button
                 className="btn-guide btn-guide-sm"
-                onClick={() => void window.hearthstoneAgent.enablePowerLogging().then(r => alert(r.message))}
+                onClick={async () => { try { const r = await window.hearthstoneAgent.enablePowerLogging(); setToast({ message: r.message, type: r.ok ? "success" : "error" }); } catch { setToast({ message: "操作失败", type: "error" }); } }}
               >
                 ⚡ 自动配置 options.txt
               </button>
@@ -280,6 +280,15 @@ export function SettingsPanel({
                 }}
               >
                 📋 查看完整 Prompt
+              </button>
+            </div>
+            <div className="field-row">
+              <label></label>
+              <button
+                className="btn-guide btn-guide-sm"
+                onClick={() => void window.hearthstoneAgent.openPowerLog()}
+              >
+                📄 查看 Power.log
               </button>
             </div>
           </div>

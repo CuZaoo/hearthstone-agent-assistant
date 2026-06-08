@@ -30,6 +30,7 @@ export const IPC = {
   windowClose: "app:window-close",
   getDiagnosticLogs: "app:get-diagnostic-logs",
   openDiagnosticLog: "app:open-diagnostic-log",
+  openPowerLog: "app:open-power-log",
   enablePowerLogging: "app:enable-power-logging",
 } as const;
 
@@ -96,6 +97,9 @@ export function registerIpcHandlers(deps: IpcHandlerDependencies): void {
   });
   ipcMain.handle(IPC.openDiagnosticLog, async () => {
     await shell.openPath(deps.diagnosticLogPath);
+  });
+  ipcMain.handle(IPC.openPowerLog, async () => {
+    await shell.openPath(deps.getStatus().settings.powerLogPath);
   });
   ipcMain.handle(IPC.enablePowerLogging, () => enablePowerLoggingInOptionsFile());
   ipcMain.handle("app:fallback-prompt-respond", (_event, useFallback: boolean) => {

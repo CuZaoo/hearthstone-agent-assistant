@@ -31,6 +31,7 @@ declare global {
     closeWindow(): Promise<void>;
     getDiagnosticLogs(count?: number): Promise<DiagnosticLogEntry[]>;
     openDiagnosticLog(): Promise<void>;
+    openPowerLog(): Promise<void>;
     enablePowerLogging(): Promise<{ ok: boolean; message: string }>;
     onFallbackPrompt(callback: (data: { failedAgentName: string; fallbackAgentName: string; reason: string }) => void): () => void;
     fallbackPromptRespond(useFallback: boolean): Promise<boolean>;

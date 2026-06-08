@@ -162,7 +162,7 @@ export function Dashboard({ status }: { status: AppStatus }) {
           />
         </div>
         <div className="dashboard-footer">
-          <span className="changelog-link" onClick={() => setChangelogOpen(true)}>v1.2.0</span>
+          <span className="changelog-link" onClick={() => setChangelogOpen(true)}>v1.3.0</span>
         </div>
       </div>
 

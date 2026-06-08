@@ -55,6 +55,7 @@ export class AnalysisService {
   private busy = false;
   private statusMessage: string | undefined;
   private lastAutoAnalyzedRevision: string | undefined;
+  private lastAutoAnalyzedTurn: number | undefined;
   private pendingAutoAnalyzeTimer: NodeJS.Timeout | undefined;
   private pendingAutoAnalyzeRevision: string | undefined;
   private lastAgentRequestBody: unknown | undefined;
@@ -311,6 +312,7 @@ export class AnalysisService {
         return;
       }
       this.lastAutoAnalyzedRevision = latest.revision;
+      this.lastAutoAnalyzedTurn = latest.turn;
       void this.analyze("auto");
     }, AUTO_ANALYZE_STABLE_MS);
   }
@@ -322,6 +324,7 @@ export class AnalysisService {
         snapshot.activePlayer === "self" &&
         !snapshot.animationPending &&
         snapshot.revision !== this.lastAutoAnalyzedRevision &&
+        snapshot.turn !== this.lastAutoAnalyzedTurn &&
         !this.busy &&
         settings.liveRecommendationsEnabled &&
         settings.liveRecommendationsRiskAcceptedAt,

@@ -30,6 +30,7 @@ const IPC = {
   windowClose: "app:window-close",
   getDiagnosticLogs: "app:get-diagnostic-logs",
   openDiagnosticLog: "app:open-diagnostic-log",
+  openPowerLog: "app:open-power-log",
   enablePowerLogging: "app:enable-power-logging",
 } as const;
 
@@ -59,6 +60,7 @@ contextBridge.exposeInMainWorld("hearthstoneAgent", {
   getDiagnosticLogs: (count?: number): Promise<DiagnosticLogEntry[]> =>
     ipcRenderer.invoke(IPC.getDiagnosticLogs, count),
   openDiagnosticLog: (): Promise<void> => ipcRenderer.invoke(IPC.openDiagnosticLog),
+  openPowerLog: (): Promise<void> => ipcRenderer.invoke(IPC.openPowerLog),
   enablePowerLogging: (): Promise<{ ok: boolean; message: string }> => ipcRenderer.invoke(IPC.enablePowerLogging),
   onStatusChanged: (callback: (status: AppStatus) => void): (() => void) => {
     const listener = (_event: Electron.IpcRendererEvent, status: AppStatus) =>
