@@ -115,8 +115,8 @@ export class HistoryDatabase {
     while (i < remaining.length) {
       let j = i + 1;
       while (j < remaining.length) {
-        const a = remaining[i];
-        const b = remaining[j];
+        const a = remaining[i]!;
+        const b = remaining[j]!;
         const diff = Math.abs(
           new Date(b.started_at).getTime() - new Date(a.started_at).getTime(),
         );

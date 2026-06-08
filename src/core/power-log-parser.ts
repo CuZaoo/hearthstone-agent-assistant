@@ -259,7 +259,7 @@ export class PowerLogParser {
       }
       this.onCurrentPlayer?.({
         entityId,
-        value,
+        value: String(value),
         activePlayerId: this.state.activePlayerId ?? 0,
         activePlayer: this.state.activePlayer,
       });
