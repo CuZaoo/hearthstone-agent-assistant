@@ -51,10 +51,7 @@ export class AgentFallbackSelector {
       return undefined;
     }
 
-    const mainWindow = this.deps.windowManager.getMainWindow();
-    if (!mainWindow) return undefined;
-
-    mainWindow.webContents.send("app:show-fallback-prompt-ui", {
+    this.deps.windowManager.broadcast("app:show-fallback-prompt-ui", {
       failedAgentName: failedAgent.name,
       fallbackAgentName: fallback.name,
       reason,

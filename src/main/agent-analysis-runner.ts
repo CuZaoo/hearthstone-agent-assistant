@@ -100,6 +100,9 @@ export class AgentAnalysisRunner {
     try {
       return await this.requestAnalysisFromAgent(agent, apiKey, snapshot, timeoutMs, signal);
     } catch (error) {
+      if (error instanceof Error && error.name === "AbortError") {
+        throw error;
+      }
       const originalMessage =
         error instanceof Error ? error.message : `${agent.name} 分析失败。`;
       const fallback = await this.deps.fallbackSelector.chooseFallbackAgent(

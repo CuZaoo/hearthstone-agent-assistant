@@ -16,27 +16,12 @@ export function OverlayBar({ status }: { status: AppStatus }) {
   const turnLabel = turnOwnerLabel(status.snapshot?.activePlayer);
   const turnClass = turnOwnerClass(status.snapshot?.activePlayer);
   const [busyElapsed, setBusyElapsed] = useState(0);
-  const [compact, setCompact] = useState(false);
-  const [tickerIdx, setTickerIdx] = useState(0);
-  const [tickerHover, setTickerHover] = useState(false);
 
   useEffect(() => {
     if (!status.busy) { setBusyElapsed(0); return; }
     const id = setInterval(() => setBusyElapsed(t => t + 1), 1000);
     return () => clearInterval(id);
   }, [status.busy]);
-
-  useEffect(() => {
-    setTickerIdx(0);
-  }, [analysis]);
-
-  useEffect(() => {
-    if (candidates.length < 2 || tickerHover || status.busy || !compact) return;
-    const id = setInterval(() => setTickerIdx(i => (i + 1) % candidates.length), 4000);
-    return () => clearInterval(id);
-  }, [candidates.length, tickerHover, status.busy, compact]);
-
-  const ticker = candidates[tickerIdx];
 
   const handleSwitchAgent = useCallback((agentId: string) => {
     const agent = status.settings.agents.find(a => a.id === agentId);
@@ -48,79 +33,10 @@ export function OverlayBar({ status }: { status: AppStatus }) {
     void window.hearthstoneAgent.saveSettings(next);
   }, [status.settings]);
 
-  if (compact) {
-    return (
-      <div className="overlay-shell" style={{justifyContent:"flex-end"}}>
-        <div className="ol-ticker">
-          <span className={`sign-icon${status.busy ? " busy" : ""}`}>
-            {status.busy ? "⏳" : "🍺"}
-          </span>
-
-          {status.busy ? (
-            <span className="ticker-text">分析中… {busyElapsed}s</span>
-          ) : !analysis ? (
-            <span className="ticker-text">{turnLabel} · {activeAgent.name} · {status.message ?? "按 Ctrl+Shift+A"}</span>
-          ) : ticker ? (
-            <div
-              className="ticker-body"
-              onMouseEnter={() => setTickerHover(true)}
-              onMouseLeave={() => setTickerHover(false)}
-              onClick={() => setTickerIdx(i => (i + 1) % candidates.length)}
-            >
-              <span className="ticker-rank">{labelForRank(ticker.rank)}</span>
-              <span className="ticker-action">
-                {extractAgentPrefix(ticker.rationale) && (
-                  <span className="ticker-agent">[{extractAgentPrefix(ticker.rationale)}]</span>
-                )}
-                {ticker.actions[0]?.description ?? "—"}
-              </span>
-              {ticker.winRateBefore !== undefined && (
-                <span className="ticker-wr">
-                  {Math.round(ticker.winRateBefore * 100)}→{Math.round((ticker.winRateAfter ?? ticker.winRateBefore) * 100)}%
-                </span>
-              )}
-              <span className={`ticker-pct${ticker.confidence < 0.6 ? " low" : ticker.confidence < 0.75 ? " med" : " high"}`}>
-                {Math.round(ticker.confidence * 100)}%
-              </span>
-            </div>
-          ) : null}
-
-          {candidates.length > 1 && !status.busy && (
-            <div className="ticker-dots">
-              {candidates.map((_, index) => (
-                <button key={index} className={`tdot${index === tickerIdx ? " act" : ""}`} onClick={() => setTickerIdx(index)} />
-              ))}
-            </div>
-          )}
-
-          {analysis?.stale && <span className="ticker-stale">已过期</span>}
-          <span className={`ticker-meta ${turnClass}`}>
-            {turnLabel} ·
-            <select
-              className="ticker-agent-select"
-              value={activeAgent.id}
-              onChange={e => handleSwitchAgent(e.target.value)}
-              onClick={e => e.stopPropagation()}
-            >
-              {status.settings.agents.map(a => (
-                <option key={a.id} value={a.id}>{a.name}</option>
-              ))}
-            </select>
-          </span>
-
-          <div className="ticker-actions">
-            <button className={`btn-gold${status.busy ? " loading" : ""}`} onClick={() => void window.hearthstoneAgent.analyze()} disabled={status.busy}>
-              {status.busy ? "分析中" : "分析"}
-            </button>
-            {status.busy && <button className="btn-dim" onClick={() => void window.hearthstoneAgent.stopAnalysis()}>停止</button>}
-            <button className="btn-dim" onClick={() => setCompact(false)}>详细</button>
-            <button className="btn-dim" onClick={() => void window.hearthstoneAgent.showMainWindow()}>主界面</button>
-            <button className="btn-dim" onClick={() => void window.hearthstoneAgent.toggleOverlay()}>隐藏</button>
-          </div>
-        </div>
-      </div>
-    );
-  }
+  const handleToggleAutoAnalyze = useCallback(() => {
+    const next = { ...status.settings, autoAnalyze: !status.settings.autoAnalyze };
+    void window.hearthstoneAgent.saveSettings(next);
+  }, [status.settings]);
 
   return (
     <div className="overlay-shell">
@@ -157,7 +73,7 @@ export function OverlayBar({ status }: { status: AppStatus }) {
               <div className="ol-footer">
                  <button className="btn-gold loading">分析中 {busyElapsed}s</button>
                 {status.busy && <button className="btn-dim" onClick={() => void window.hearthstoneAgent.stopAnalysis()}>停止</button>}
-                <button className="btn-dim" onClick={() => setCompact(true)}>简略</button>
+                <button className={`btn-dim${status.settings.autoAnalyze ? " active" : ""}`} onClick={handleToggleAutoAnalyze}>自动</button>
                 <button className="btn-dim" onClick={() => void window.hearthstoneAgent.showMainWindow()}>主界面</button>
                 <button className="btn-dim" onClick={() => void window.hearthstoneAgent.toggleOverlay()}>隐藏</button>
               </div>
@@ -176,7 +92,7 @@ export function OverlayBar({ status }: { status: AppStatus }) {
               </div>
               <div className="ol-footer">
                 <button className="btn-gold" onClick={() => void window.hearthstoneAgent.analyze()}>分析</button>
-                <button className="btn-dim" onClick={() => setCompact(true)}>简略</button>
+                <button className={`btn-dim${status.settings.autoAnalyze ? " active" : ""}`} onClick={handleToggleAutoAnalyze}>自动</button>
                 <button className="btn-dim" onClick={() => void window.hearthstoneAgent.showMainWindow()}>主界面</button>
                 <button className="btn-dim" onClick={() => void window.hearthstoneAgent.toggleOverlay()}>隐藏</button>
               </div>
@@ -225,7 +141,7 @@ export function OverlayBar({ status }: { status: AppStatus }) {
                 {status.busy ? `分析中 ${busyElapsed}s` : "分析"}
               </button>
               {status.busy && <button className="btn-dim" onClick={() => void window.hearthstoneAgent.stopAnalysis()}>停止</button>}
-              <button className="btn-dim" onClick={() => setCompact(true)}>简略</button>
+              <button className={`btn-dim${status.settings.autoAnalyze ? " active" : ""}`} onClick={handleToggleAutoAnalyze}>自动</button>
               <button className="btn-dim" onClick={() => void window.hearthstoneAgent.showMainWindow()}>主界面</button>
               <button className="btn-dim" onClick={() => void window.hearthstoneAgent.toggleOverlay()}>隐藏</button>
               {analysis?.usage?.totalTokens != null && (
