@@ -71,7 +71,7 @@ export class PowerLogWatcher extends EventEmitter<PowerLogWatcherEvents> {
         this.emit("status", {
           available: false,
           path: this.path,
-          message: "未找到 Power.log，请按文档手动启用炉石日志。",
+          message: "未找到对局日志，请按文档手动启用炉石日志。",
         });
         return;
       }
@@ -138,7 +138,7 @@ export class PowerLogWatcher extends EventEmitter<PowerLogWatcherEvents> {
     this.emit("status", {
       available: true,
       path: this.path,
-      message: this.lastSize > 0 ? "Power.log 正在监听。" : "Power.log 为空。",
+      message: this.lastSize > 0 ? "对局日志正在监听。" : "对局日志为空。",
       lastEventAt: new Date(fileStats.mtimeMs).toISOString(),
     });
   }

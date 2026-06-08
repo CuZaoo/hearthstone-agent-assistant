@@ -36,6 +36,7 @@ export class PowerLogParser {
   private state: ParserState = this.newState();
   private revisionCounter = 0;
   private lastCreateGameTimestamp?: string;
+  onCurrentPlayer?: (info: { entityId: number; value: string; activePlayerId: number; activePlayer: string }) => void;
 
   reset(): void {
     this.state = this.newState();
@@ -249,13 +250,19 @@ export class PowerLogParser {
     } else if (tag === "CURRENT_PLAYER") {
       if (entityId === this.state.gameEntityId) {
         this.state.activePlayerId = Number(value);
-      } else if (Number(value) === 1) {
+      } else {
         this.state.activePlayerId = this.playerIdForEntity(entityId);
       }
       if (this.state.activePlayerId !== undefined) {
         this.state.activePlayer =
           this.sideForPlayerId(this.state.activePlayerId) ?? "unknown";
       }
+      this.onCurrentPlayer?.({
+        entityId,
+        value,
+        activePlayerId: this.state.activePlayerId ?? 0,
+        activePlayer: this.state.activePlayer,
+      });
     } else if (tag === "FORMAT_TYPE") {
       this.state.formatType = String(value);
       this.updateGameMode();
@@ -472,9 +479,11 @@ export class PowerLogParser {
   }
 
   private startNewGame(): void {
+    const gameId = crypto.randomUUID();
     const processedEventIds = this.state.processedEventIds;
     const processedEventIdQueue = this.state.processedEventIdQueue;
     this.state = this.newState();
+    this.state.gameId = gameId;
     this.state.processedEventIds = processedEventIds;
     this.state.processedEventIdQueue = processedEventIdQueue;
     this.bumpRevision();

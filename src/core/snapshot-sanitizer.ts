@@ -22,6 +22,9 @@ export function sanitizeSnapshotForAgent(
       cardId: catalog.has(event.cardId) ? event.cardId : undefined,
       text: sanitizeEventText(event.type, event.text),
     })),
+    capturedAt: "",
+    animationPending: false,
+    cardCatalogVersion: "",
   };
 }
 
@@ -67,7 +70,7 @@ function sanitizeCard(card: CardReference, catalog: CardCatalog): CardReference 
     entityId: card.entityId,
     cardId: card.cardId,
     name: catalogEntry?.name ?? card.name,
-    text: catalogEntry?.text,
+    text: catalogEntry?.text ?? card.text,
     cardType: catalogEntry?.cardType ?? card.cardType,
     zonePosition: card.zonePosition,
     attack: card.attack,

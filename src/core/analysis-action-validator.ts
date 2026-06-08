@@ -7,6 +7,44 @@ import type {
 } from "../shared/types.js";
 import type { CardCatalog } from "./card-catalog.js";
 
+function entityDisplayName(
+  entityId: number | undefined,
+  snapshot: GameStateSnapshot,
+  catalog: CardCatalog,
+): string {
+  if (entityId === undefined) return "未知";
+  for (const card of snapshot.self.hand) {
+    if (card.entityId === entityId) return resolveCardName(card, catalog);
+  }
+  for (const card of snapshot.self.board) {
+    if (card.entityId === entityId) return resolveCardName(card, catalog);
+  }
+  for (const card of snapshot.opponent.board) {
+    if (card.entityId === entityId) return resolveCardName(card, catalog);
+  }
+  if (snapshot.self.heroPower?.entityId === entityId) return resolveCardName(snapshot.self.heroPower, catalog);
+  if (snapshot.opponent.heroPower?.entityId === entityId) return resolveCardName(snapshot.opponent.heroPower, catalog);
+  if (snapshot.self.weapon?.entityId === entityId) {
+    const entry = snapshot.self.weapon.cardId ? catalog.get(snapshot.self.weapon.cardId) : undefined;
+    return entry?.name ?? snapshot.self.weapon.name ?? `实体 ${entityId}`;
+  }
+  if (snapshot.opponent.weapon?.entityId === entityId) {
+    const entry = snapshot.opponent.weapon.cardId ? catalog.get(snapshot.opponent.weapon.cardId) : undefined;
+    return entry?.name ?? snapshot.opponent.weapon.name ?? `实体 ${entityId}`;
+  }
+  if (snapshot.self.hero.entityId === entityId) return "己方英雄";
+  if (snapshot.opponent.hero.entityId === entityId) return "对手英雄";
+  return `实体 ${entityId}`;
+}
+
+function resolveCardName(
+  card: CardReference,
+  catalog: CardCatalog,
+): string {
+  const entry = card.cardId ? catalog.get(card.cardId) : undefined;
+  return entry?.name ?? card.name ?? card.cardId ?? `实体 ${card.entityId}`;
+}
+
 export function validateCandidateLine(
   candidate: CandidateLine,
   snapshot: GameStateSnapshot,
@@ -30,7 +68,7 @@ export function validateCandidateLine(
       usedSourceIds.has(action.sourceEntityId)
     ) {
       errors.push(
-        `路线 ${candidate.rank} 重复使用了实体 ${action.sourceEntityId}。`,
+        `路线 ${candidate.rank} 重复使用了${entityDisplayName(action.sourceEntityId, snapshot, catalog)}。`,
       );
     }
     if (action.sourceEntityId !== undefined && action.type !== "attack") {
@@ -143,27 +181,27 @@ function validateAction(
     action.sourceEntityId !== undefined &&
     !ownEntities.some((entity) => entity.entityId === action.sourceEntityId)
   ) {
-    errors.push(`动作引用了不可用的己方实体 ${action.sourceEntityId}。`);
+    errors.push(`动作引用了不可用的己方${entityDisplayName(action.sourceEntityId, snapshot, catalog)}。`);
   }
   if (
     action.targetEntityId !== undefined &&
     !allTargets.some((entity) => entity.entityId === action.targetEntityId)
   ) {
-    errors.push(`动作引用了不可见的目标实体 ${action.targetEntityId}。`);
+    errors.push(`动作引用了不可见的目标${entityDisplayName(action.targetEntityId, snapshot, catalog)}。`);
   }
   if (
     action.targetEntityId !== undefined &&
     action.targetSide === "self" &&
     !selfTargetIds.has(action.targetEntityId)
   ) {
-    errors.push(`目标实体 ${action.targetEntityId} 不属于己方。`);
+    errors.push(`目标${entityDisplayName(action.targetEntityId, snapshot, catalog)} 不属于己方。`);
   }
   if (
     action.targetEntityId !== undefined &&
     action.targetSide === "opponent" &&
     !opponentTargetIds.has(action.targetEntityId)
   ) {
-    errors.push(`目标实体 ${action.targetEntityId} 不属于对手。`);
+    errors.push(`目标${entityDisplayName(action.targetEntityId, snapshot, catalog)} 不属于对手。`);
   }
   const source =
     action.sourceEntityId === undefined
@@ -174,10 +212,10 @@ function validateAction(
   }
   if (source && "cardId" in source && source.cardId) {
     if (!action.sourceCardId && action.type !== "hero-power") {
-      errors.push(`动作的实体 ${action.sourceEntityId} 必须携带卡牌 ID ${source.cardId}。`);
+      errors.push(`动作的${entityDisplayName(action.sourceEntityId, snapshot, catalog)} 必须携带卡牌 ID ${source.cardId}。`);
     } else if (action.sourceCardId && source.cardId !== action.sourceCardId) {
       errors.push(
-        `动作的实体 ${action.sourceEntityId} 与卡牌 ${action.sourceCardId} 不匹配。`,
+        `动作的${entityDisplayName(action.sourceEntityId, snapshot, catalog)} 与卡牌 ${action.sourceCardId} 不匹配。`,
       );
     }
   }
@@ -191,9 +229,9 @@ function validateAction(
       (entry) => entry.entityId === action.sourceEntityId,
     );
     if (!card) {
-      errors.push(`出牌动作的实体 ${action.sourceEntityId} 不在己方手牌中。`);
+      errors.push(`出牌动作的${entityDisplayName(action.sourceEntityId, snapshot, catalog)} 不在己方手牌中。`);
     } else if ((card.cost ?? 0) > snapshot.self.mana) {
-      warnings.push(`实体 ${action.sourceEntityId} 的基础费用高于当前法力。`);
+      warnings.push(`${entityDisplayName(action.sourceEntityId, snapshot, catalog)} 的基础费用高于当前法力。`);
     } else {
       validatePlayCardVisibleEffect(card, snapshot, catalog, errors);
     }
@@ -211,7 +249,7 @@ function validateAction(
       errors.push("攻击动作必须引用可攻击的己方随从或英雄。");
     }
     if (attacker?.exhausted || attacker?.dormant || (attacker?.attack ?? 0) <= 0) {
-      errors.push(`实体 ${attacker?.entityId ?? action.sourceEntityId} 当前无法攻击。`);
+      errors.push(`${entityDisplayName(attacker?.entityId ?? action.sourceEntityId, snapshot, catalog)} 当前无法攻击。`);
     }
     if (snapshot.self.hero.entityId === action.sourceEntityId && snapshot.self.hero.exhausted) {
       errors.push("己方英雄当前无法攻击。");

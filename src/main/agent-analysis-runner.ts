@@ -65,7 +65,7 @@ export class AgentAnalysisRunner {
     for (const agent of settings.agents) {
       if (!agent.model) continue;
       const apiKey = await this.deps.credentialStore.getApiKey(agent.id);
-      if (apiKey) eligible.push({ ...agent, apiKey });
+      eligible.push({ ...agent, apiKey: apiKey ?? "" });
     }
     if (eligible.length === 0) {
       return this.runSingleAgentAnalysis(snapshot, analysisStartedAt, signal);
@@ -130,11 +130,12 @@ export class AgentAnalysisRunner {
     const settings = this.deps.getSettings();
     const client = new AgentClient(
       {
-        baseUrl: agent.baseUrl,
+        apiUrl: agent.apiUrl,
         model: agent.model,
-        transport: agent.transport,
+        format: agent.format,
         timeoutMs,
         winRateEstimationEnabled: settings.winRateEstimationEnabled,
+        promptConfig: agent.promptConfig,
       },
       apiKey,
       this.deps.getCatalog(),
@@ -152,11 +153,7 @@ export class AgentAnalysisRunner {
 
   private async resolveSelectedAgent(): Promise<AgentWithApiKey> {
     const agent = this.deps.fallbackSelector.activeAgent();
-    const selected = await this.deps.fallbackSelector.getApiKeyOrFallback(
-      agent,
-      "尚未配置 Agent API Key。",
-    );
-    if (!selected) throw new Error("尚未配置 Agent API Key。");
+    const selected = await this.deps.fallbackSelector.getApiKeyOrFallback(agent);
     if (!selected.model) throw new Error("尚未配置 Agent 模型名称。");
     return selected;
   }

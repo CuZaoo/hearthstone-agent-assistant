@@ -17,6 +17,7 @@ export interface AppStatusInput {
   visualValidation?: VisualValidationReport;
   busy: boolean;
   message?: string;
+  powerLogConfig?: { ok: boolean; message: string };
 }
 
 export function buildAppStatus(input: AppStatusInput): AppStatus {
@@ -34,5 +35,6 @@ export function buildAppStatus(input: AppStatusInput): AppStatus {
     visualValidation: input.visualValidation,
     busy: input.busy,
     message: input.message,
+    powerLogConfig: input.powerLogConfig,
   };
 }

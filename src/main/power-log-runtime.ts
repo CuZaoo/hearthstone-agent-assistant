@@ -22,16 +22,21 @@ interface PowerLogRuntimeDependencies {
 
 export class PowerLogRuntime {
   private readonly parser = new PowerLogParser();
+
   private watcher: PowerLogWatcher | undefined;
   private discoveryTimer: NodeJS.Timeout | undefined;
   private currentSnapshot: GameStateSnapshot | undefined;
   private logStatus: LogStatus = {
     available: false,
     path: "",
-    message: "尚未开始监听 Power.log。",
+    message: "尚未开始监听对局日志。",
   };
 
-  constructor(private readonly deps: PowerLogRuntimeDependencies) {}
+  constructor(private readonly deps: PowerLogRuntimeDependencies) {
+    this.parser.onCurrentPlayer = (info) => {
+      this.deps.writeDiagnostic("parser.current_player", info);
+    };
+  }
 
   status(): LogStatus {
     return this.logStatus;
@@ -57,7 +62,7 @@ export class PowerLogRuntime {
       await this.watcher.pollNow();
     } catch (error) {
       this.deps.writeDiagnostic("power_log.refresh_failed", {
-        error: error instanceof Error ? error.message : "刷新 Power.log 失败。",
+        error: error instanceof Error ? error.message : "刷新对局日志失败。",
       });
     }
   }
@@ -94,15 +99,22 @@ export class PowerLogRuntime {
       this.deps.broadcastStatus();
     });
     this.watcher.on("change", () => {
-      const catalog = this.deps.getCatalog();
-      const next = enrichSnapshotWithCatalog(
-        this.parser.snapshot(catalog.version),
-        catalog,
-      );
-      this.currentSnapshot = next;
-      this.deps.onSnapshotChanged(next);
-      this.deps.historyDatabase.saveSnapshot(next);
-      this.deps.broadcastStatus();
+      try {
+        const catalog = this.deps.getCatalog();
+        const next = enrichSnapshotWithCatalog(
+          this.parser.snapshot(catalog.version),
+          catalog,
+        );
+        this.currentSnapshot = next;
+        this.deps.onSnapshotChanged(next);
+        this.deps.historyDatabase.saveSnapshot(next);
+        this.deps.broadcastStatus();
+      } catch (error) {
+        this.deps.writeDiagnostic("power_log.change_handler_error", {
+          error: error instanceof Error ? error.message : String(error),
+          stack: error instanceof Error ? error.stack : undefined,
+        });
+      }
     });
     this.watcher.on("error", (error) => {
       this.logStatus = {
@@ -121,10 +133,10 @@ function powerLogStatusMessage(
   inspection: Awaited<ReturnType<typeof inspectPowerLog>>,
 ): string {
   if (inspection.location) {
-    return `已发现 Power.log：${inspection.location.source}`;
+    return `已发现对局日志：${inspection.location.source}`;
   }
   if (inspection.latestSession) {
-    return `已发现最新炉石日志目录，但其中没有 Power.log：${inspection.latestSession.powerLogPath}。请确认已手动启用 Power.log；未进入对局时也可能暂未生成。`;
+    return `已发现最新炉石日志目录，但其中没有对局日志文件：${inspection.latestSession.powerLogPath}。请确认已手动启用对局日志；未进入对局时也可能暂未生成。`;
   }
-  return "未找到 Power.log，请启动炉石并确认已手动启用日志。";
+  return "未找到对局日志，请启动炉石并确认已手动启用日志。";
 }

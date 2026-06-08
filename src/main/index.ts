@@ -21,6 +21,7 @@ import { buildAppStatus } from "./app-status.js";
 import { IPC, registerIpcHandlers } from "./ipc-handlers.js";
 import { PowerLogRuntime } from "./power-log-runtime.js";
 import { SettingsStore } from "./settings-store.js";
+import { enablePowerLoggingInOptionsFile } from "./power-log-locator.js";
 import { WindowManager } from "./window-manager.js";
 
 const windowManager = new WindowManager();
@@ -32,6 +33,7 @@ let analysisService: AnalysisService;
 let powerLogRuntime: PowerLogRuntime;
 let catalog: CardCatalog;
 let settings: AppSettings;
+let powerLogConfig: AppStatus["powerLogConfig"];
 
 const gotTheLock = app.requestSingleInstanceLock();
 if (!gotTheLock) {
@@ -45,13 +47,19 @@ app.whenReady().then(async () => {
   const userData = app.getPath("userData");
   await mkdir(userData, { recursive: true });
   settingsStore = new SettingsStore(join(userData, "settings.json"));
-  credentialStore = new CredentialStore();
+  credentialStore = new CredentialStore(userData);
   historyDatabase = new HistoryDatabase(join(userData, "history.db"));
   diagnosticLog = new DiagnosticLog(join(userData, "diagnostics.jsonl"));
   settings = await settingsStore.load();
   catalog = await CardCatalog.load(resolveCatalogPath());
   catalog.setLanguage(settings.language);
   historyDatabase.setCardCatalogVersion(catalog.version);
+
+  if (!settings.guideDismissed) {
+    powerLogConfig = await enablePowerLoggingInOptionsFile();
+    writeDiagnostic("power_log.auto_config", powerLogConfig);
+  }
+
   powerLogRuntime = new PowerLogRuntime({
     getSettings: () => settings,
     getCatalog: () => catalog,
@@ -86,6 +94,7 @@ app.whenReady().then(async () => {
 
   Menu.setApplicationMenu(null);
   windowManager.createWindows({ overlayVisible: settings.overlayVisible });
+  windowManager.createTray(toggleOverlay);
   registerIpcHandlers({
     refreshCurrentLog: () => powerLogRuntime.refreshCurrentLog(),
     getStatus,
@@ -96,6 +105,7 @@ app.whenReady().then(async () => {
     historyDatabase,
     analysisService,
     windowManager,
+    diagnosticLogPath: diagnosticLog.path,
   });
   registerShortcuts();
   await powerLogRuntime.start();
@@ -140,8 +150,14 @@ async function saveSettings(nextSettings: AppSettings): Promise<AppStatus> {
 }
 
 function toggleOverlay(): AppStatus {
+  const before = settings.overlayVisible;
   settings = { ...settings, overlayVisible: windowManager.toggleOverlayVisible() };
   void settingsStore.save(settings);
+  writeDiagnostic("overlay.toggle", {
+    before,
+    after: settings.overlayVisible,
+    windowExists: Boolean(windowManager["overlayWindow"]),
+  });
   broadcastStatus();
   return getStatus();
 }
@@ -161,6 +177,7 @@ function getStatus(): AppStatus {
     visualValidation: analysisState.visualValidation,
     busy: analysisState.busy,
     message: analysisState.message,
+    powerLogConfig,
   });
 }
 
@@ -176,9 +193,9 @@ function diagnosticSettings() {
     powerLogPath: settings.powerLogPath,
     activeAgentId: agent.id,
     agentName: agent.name,
-    baseUrl: agent.baseUrl,
+    apiUrl: agent.apiUrl,
     model: agent.model,
-    transport: agent.transport,
+    format: agent.format,
     timeoutMs: agent.timeoutMs,
     maxCandidates: settings.maxCandidates,
     liveRecommendationsEnabled: settings.liveRecommendationsEnabled,

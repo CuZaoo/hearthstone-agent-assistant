@@ -11,6 +11,7 @@ const expectedElectronExits = new Set();
 let electronProcess;
 let restartTimer;
 let restarting = false;
+let watchReady = false;
 
 const npx = process.platform === "win32" ? "npx.cmd" : "npx";
 const vite = start(npx, ["vite"], "vite");
@@ -20,7 +21,12 @@ await waitFor(() => existsSync(mainEntry), "main build output");
 await waitForHttp(viteUrl);
 startElectron();
 
+// 延迟启用文件监听，避免 tsc --watch 首次写入的余波触发重启
+await delay(800);
+watchReady = true;
+
 watch(mainOutDir, { recursive: true }, (_event, filename) => {
+  if (!watchReady) return;
   if (filename && !String(filename).endsWith(".js")) {
     return;
   }

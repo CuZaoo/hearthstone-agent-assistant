@@ -17,6 +17,7 @@ export interface EntityState {
 }
 
 export interface ParserState {
+  gameId: string;
   entities: Map<number, EntityState>;
   playerIds: Set<number>;
   playerIdByEntityId: Map<number, number>;
@@ -43,6 +44,7 @@ export interface ParserState {
 
 export function newParserState(): ParserState {
   return {
+    gameId: "",
     entities: new Map(),
     playerIds: new Set(),
     playerIdByEntityId: new Map(),

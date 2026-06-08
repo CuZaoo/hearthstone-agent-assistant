@@ -1,10 +1,13 @@
-import { app, BrowserWindow } from "electron";
+import { app, BrowserWindow, Menu, screen, Tray } from "electron";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 
 export class WindowManager {
   private mainWindow: BrowserWindow | undefined;
   private overlayWindow: BrowserWindow | undefined;
+  private ballWindow: BrowserWindow | undefined;
+  private tray: Tray | undefined;
+  private onTrayToggle: (() => void) | undefined;
 
   createWindows(options: { overlayVisible: boolean }): void {
     const preload = join(import.meta.dirname, "preload.cjs");
@@ -29,12 +32,13 @@ export class WindowManager {
       },
     });
 
-    const [mainX = 0, mainY = 0] = this.mainWindow.getPosition();
+    const gap = 10;
+    const { width: screenWidth, height: screenHeight } = screen.getPrimaryDisplay().workAreaSize;
     this.overlayWindow = new BrowserWindow({
       width: 420,
       height: 540,
-      x: mainX - 420,
-      y: mainY + 30,
+      x: gap,
+      y: Math.round((screenHeight - 540) / 2),
       frame: false,
       transparent: true,
       alwaysOnTop: true,
@@ -59,12 +63,40 @@ export class WindowManager {
       this.overlayWindow = undefined;
     });
 
+    this.ballWindow = new BrowserWindow({
+      width: 56,
+      height: 56,
+      x: gap,
+      y: Math.round((screenHeight - 56) / 2),
+      frame: false,
+      transparent: true,
+      alwaysOnTop: true,
+      skipTaskbar: true,
+      show: !options.overlayVisible,
+      focusable: false,
+      resizable: false,
+      icon: windowIcon,
+      webPreferences: {
+        preload,
+        contextIsolation: true,
+        nodeIntegration: false,
+        sandbox: true,
+        devTools: !app.isPackaged,
+      },
+    });
+
+    this.ballWindow.on("closed", () => {
+      this.ballWindow = undefined;
+    });
+
     if (rendererUrl) {
       void this.mainWindow.loadURL(rendererUrl);
       void this.overlayWindow.loadURL(`${rendererUrl}?view=overlay`);
+      void this.ballWindow.loadURL(`${rendererUrl}?view=ball`);
     } else {
       void this.mainWindow.loadFile(rendererFile);
       void this.overlayWindow.loadFile(rendererFile, { query: { view: "overlay" } });
+      void this.ballWindow.loadFile(rendererFile, { query: { view: "ball" } });
     }
   }
 
@@ -101,6 +133,31 @@ export class WindowManager {
     this.mainWindow?.close();
   }
 
+  createTray(onToggle: () => void): void {
+    this.onTrayToggle = onToggle;
+    const iconPath = this.resolveWindowIconPath();
+    if (!iconPath) return;
+    this.tray = new Tray(iconPath);
+    this.tray.setToolTip("炉石对局 Agent 助手");
+    this.tray.on("click", onToggle);
+    this.refreshTrayMenu();
+  }
+
+  private refreshTrayMenu(): void {
+    if (!this.tray) return;
+    const isVisible = this.overlayWindow?.isVisible() ?? false;
+    this.tray.setContextMenu(
+      Menu.buildFromTemplate([
+        {
+          label: isVisible ? "隐藏悬浮窗" : "显示悬浮窗",
+          click: () => this.onTrayToggle?.(),
+        },
+        { type: "separator" },
+        { label: "退出", click: () => app.quit() },
+      ]),
+    );
+  }
+
   toggleOverlayVisible(): boolean {
     this.setOverlayVisible(!this.overlayWindow?.isVisible());
     return Boolean(this.overlayWindow?.isVisible());
@@ -108,10 +165,29 @@ export class WindowManager {
 
   setOverlayVisible(visible: boolean): void {
     if (visible) {
+      this.repositionOverlay();
       this.overlayWindow?.showInactive();
+      this.ballWindow?.hide();
     } else {
       this.overlayWindow?.hide();
+      this.ballWindow?.showInactive();
+      this.repositionBall();
     }
+    this.refreshTrayMenu();
+  }
+
+  private repositionOverlay(): void {
+    if (!this.overlayWindow || this.overlayWindow.isDestroyed()) return;
+    const gap = 10;
+    const { width: screenWidth, height: screenHeight } = screen.getPrimaryDisplay().workAreaSize;
+    this.overlayWindow.setPosition(gap, Math.round((screenHeight - 540) / 2));
+  }
+
+  private repositionBall(): void {
+    if (!this.ballWindow || this.ballWindow.isDestroyed()) return;
+    const gap = 10;
+    const { height: screenHeight } = screen.getPrimaryDisplay().workAreaSize;
+    this.ballWindow.setPosition(gap, Math.round((screenHeight - 56) / 2));
   }
 
   broadcast<T>(channel: string, payload: T): void {
@@ -120,6 +196,9 @@ export class WindowManager {
     }
     if (this.overlayWindow && !this.overlayWindow.isDestroyed()) {
       this.overlayWindow.webContents.send(channel, payload);
+    }
+    if (this.ballWindow && !this.ballWindow.isDestroyed()) {
+      this.ballWindow.webContents.send(channel, payload);
     }
   }
 

@@ -20,9 +20,9 @@ describe("SettingsStore", () => {
     await writeFile(
       path,
       JSON.stringify({
-        baseUrl: "http://127.0.0.1:8001",
+        apiUrl: "http://127.0.0.1:8001/v1/chat/completions",
         model: "qwen3.6-35b",
-        transport: "chat-completions",
+        format: "chat-completions",
         timeoutMs: 60_000,
       }),
       "utf8",
@@ -33,12 +33,12 @@ describe("SettingsStore", () => {
     expect(settings.activeAgentId).toBe("default");
     expect(settings.agents[0]).toMatchObject({
       id: "default",
-      baseUrl: "http://127.0.0.1:8001",
+      apiUrl: "http://127.0.0.1:8001/v1/chat/completions",
       model: "qwen3.6-35b",
-      transport: "chat-completions",
+      format: "chat-completions",
       timeoutMs: 60_000,
     });
-    expect(settings.baseUrl).toBe("http://127.0.0.1:8001");
+    expect(settings.apiUrl).toBe("http://127.0.0.1:8001/v1/chat/completions");
     expect(settings.model).toBe("qwen3.6-35b");
   });
 
@@ -54,9 +54,9 @@ describe("SettingsStore", () => {
           {
             id: "  ",
             name: "",
-            baseUrl: null,
+            apiUrl: null,
             model: 7,
-            transport: "bad",
+            format: "bad",
             timeoutMs: "slow",
           },
         ],
@@ -78,10 +78,10 @@ describe("SettingsStore", () => {
     expect(settings.activeAgentId).toBe("agent-1");
     expect(settings.agents[0]).toMatchObject({
       id: "agent-1",
-      name: "Agent 1",
-      baseUrl: "https://api.openai.com",
-      model: "",
-      transport: "responses",
+      name: "",
+      apiUrl: "https://open.bigmodel.cn/api/paas/v4/chat/completions",
+      model: "glm-4-flash",
+      format: "chat-completions",
       timeoutMs: 8000,
     });
     expect(settings.maxCandidates).toBe(5);

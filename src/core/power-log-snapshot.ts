@@ -34,13 +34,12 @@ export function buildPowerLogSnapshot(
       }
     } else if (zone === "PLAY" || zone === "SECRET") {
       if (isHero(entity)) {
-        const health = numberTag(entity, "HEALTH");
-        const damage = numberTag(entity, "DAMAGE") ?? 0;
         player.hero = {
           entityId: entity.entityId,
           cardId: entity.cardId,
           name: entity.name,
-          health: health === undefined ? undefined : Math.max(0, health - damage),
+          health: numberTag(entity, "HEALTH"),
+          damage: numberTag(entity, "DAMAGE"),
           armor: numberTag(entity, "ARMOR"),
           attack: numberTag(entity, "ATK"),
           exhausted: booleanTag(entity, "EXHAUSTED"),
@@ -89,6 +88,7 @@ export function buildPowerLogSnapshot(
 
   return Object.freeze({
     revision: String(revisionCounter),
+    gameId: state.gameId,
     gameMode: state.gameMode,
     gameType: state.gameType,
     turn: state.turn,

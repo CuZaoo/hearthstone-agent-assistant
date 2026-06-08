@@ -2,12 +2,14 @@ import { AgentClient } from "../core/agent-client.js";
 import { validateSnapshotForAnalysis } from "../core/analysis-validator.js";
 import type { CardCatalog } from "../core/card-catalog.js";
 import type {
+  AgentProfile,
   AnalysisResult,
   AppSettings,
   AppStatus,
   GameStateSnapshot,
   VisualValidationReport,
 } from "../shared/types.js";
+import { getActiveAgent } from "../shared/settings-model.js";
 import { AgentAnalysisRunner } from "./agent-analysis-runner.js";
 import { AgentFallbackSelector } from "./agent-fallback-selector.js";
 import { snapshotSummary } from "./analysis-diagnostics.js";
@@ -17,6 +19,7 @@ import { captureHearthstoneWindow } from "./hearthstone-window-capture.js";
 import type { HistoryDatabase } from "./history-database.js";
 import { VisualValidator } from "./visual-validator.js";
 import type { WindowManager } from "./window-manager.js";
+import { recordAdoption } from "./adoption-tracker.js";
 
 type AnalysisSource = "manual" | "auto";
 
@@ -55,7 +58,14 @@ export class AnalysisService {
   private pendingAutoAnalyzeTimer: NodeJS.Timeout | undefined;
   private pendingAutoAnalyzeRevision: string | undefined;
   private lastAgentRequestBody: unknown | undefined;
+  private lastAgentResponseText: string | undefined;
   private analysisAbortController: AbortController | undefined;
+  private pendingAdoptionAnalysis: {
+    snapshot: GameStateSnapshot;
+    result: AnalysisResult;
+    agent: AgentProfile;
+    analysisId: number;
+  } | undefined;
   private readonly agentSelector: AgentFallbackSelector;
   private readonly agentRunner: AgentAnalysisRunner;
 
@@ -77,6 +87,15 @@ export class AnalysisService {
       },
       diagnosticAgentEvent: (event) => this.diagnosticAgentEvent(event),
     });
+
+    try {
+      const latest = deps.historyDatabase.listAnalyses(1)[0];
+      if (latest) {
+        this.currentAnalysis = { ...latest, stale: true };
+      }
+    } catch {
+      // no history yet
+    }
   }
 
   state(): AnalysisServiceState {
@@ -92,9 +111,14 @@ export class AnalysisService {
     return this.lastAgentRequestBody;
   }
 
+  getLastAgentResponse(): string | undefined {
+    return this.lastAgentResponseText;
+  }
+
   resetForLogChange(): void {
     this.currentAnalysis = undefined;
     this.visualValidation = undefined;
+    this.pendingAdoptionAnalysis = undefined;
     this.clearPendingAutoAnalyze();
   }
 
@@ -103,6 +127,28 @@ export class AnalysisService {
       this.currentAnalysis = { ...this.currentAnalysis, stale: true };
     }
     this.visualValidation = undefined;
+
+    if (this.pendingAdoptionAnalysis) {
+      const { snapshot: beforeSnapshot, result, agent, analysisId } = this.pendingAdoptionAnalysis;
+      if (
+        result.snapshotRevision !== snapshot.revision &&
+        beforeSnapshot.activePlayer === "self" &&
+        snapshot.activePlayer !== "self"
+      ) {
+        recordAdoption(
+          this.deps.historyDatabase,
+          result,
+          analysisId,
+          agent.id,
+          agent.name,
+          beforeSnapshot.turn,
+          beforeSnapshot,
+          snapshot,
+        );
+        this.pendingAdoptionAnalysis = undefined;
+      }
+    }
+
     this.scheduleAutoAnalyze(snapshot);
   }
 
@@ -131,21 +177,15 @@ export class AnalysisService {
 
     try {
       const agent = this.agentSelector.activeAgent();
-      const selectedAgent = await this.agentSelector.getApiKeyOrFallback(
-        agent,
-        "尚未配置 Agent API Key。",
-      );
-      if (!selectedAgent) {
-        throw new Error("尚未配置 Agent API Key。");
-      }
+      const selectedAgent = await this.agentSelector.getApiKeyOrFallback(agent);
       if (!selectedAgent.model) {
         throw new Error("尚未配置 Agent 模型名称。");
       }
       const client = new AgentClient(
         {
-          baseUrl: selectedAgent.baseUrl,
+          apiUrl: selectedAgent.apiUrl,
           model: selectedAgent.model,
-          transport: selectedAgent.transport,
+          format: selectedAgent.format,
           timeoutMs: selectedAgent.timeoutMs,
           winRateEstimationEnabled: this.deps.getSettings().winRateEstimationEnabled,
         },
@@ -202,6 +242,8 @@ export class AnalysisService {
       if (!latestSnapshot || latestSnapshot.revision !== result.snapshotRevision) {
         this.currentAnalysis = {
           ...result,
+          gameId: snapshot.gameId,
+          turn: snapshot.turn,
           stale: true,
           warnings: [
             ...result.warnings,
@@ -217,8 +259,12 @@ export class AnalysisService {
         });
         return this.deps.getStatus();
       }
-      this.currentAnalysis = result;
-      this.deps.historyDatabase.saveAnalysis(result);
+      this.currentAnalysis = { ...result, gameId: snapshot.gameId, turn: snapshot.turn };
+      const analysisDbId = this.deps.historyDatabase.saveAnalysis(this.currentAnalysis);
+      if (snapshot.activePlayer === "self") {
+        const agent = getActiveAgent(this.deps.getSettings());
+        this.pendingAdoptionAnalysis = { snapshot: snapshot, result, agent, analysisId: analysisDbId };
+      }
       this.statusMessage = "分析完成。";
       this.writeDiagnostic("analysis.completed", {
         snapshotRevision: result.snapshotRevision,
@@ -349,7 +395,7 @@ export class AnalysisService {
     await this.deps.refreshCurrentLog();
     const snapshot = this.deps.getSnapshot();
     if (!snapshot) {
-      throw new Error("尚未从 Power.log 读取到有效局面。");
+      throw new Error("尚未从对局日志读取到有效局面。");
     }
     if (source === "manual" && snapshot.animationPending) {
       const deadline = Date.now() + MANUAL_ANALYSIS_SETTLE_TIMEOUT_MS;
@@ -369,7 +415,7 @@ export class AnalysisService {
     }
     const latest = this.deps.getSnapshot();
     if (!latest) {
-      throw new Error("尚未从 Power.log 读取到有效局面。");
+      throw new Error("尚未从对局日志读取到有效局面。");
     }
     return latest;
   }
@@ -394,6 +440,9 @@ export class AnalysisService {
     if (event === "agent.analysis.request_payload") {
       this.lastAgentRequestBody = data?.body;
     }
+    if (event === "agent.analysis.raw_response") {
+      this.lastAgentResponseText = data?.responseText as string | undefined;
+    }
     this.writeDiagnostic(event, data ?? {});
   }
 
@@ -408,9 +457,9 @@ export class AnalysisService {
       powerLogPath: settings.powerLogPath,
       activeAgentId: agent.id,
       agentName: agent.name,
-      baseUrl: agent.baseUrl,
+      apiUrl: agent.apiUrl,
       model: agent.model,
-      transport: agent.transport,
+      format: agent.format,
       timeoutMs: agent.timeoutMs,
       maxCandidates: settings.maxCandidates,
       liveRecommendationsEnabled: settings.liveRecommendationsEnabled,
