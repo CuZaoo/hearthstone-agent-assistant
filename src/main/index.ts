@@ -51,7 +51,17 @@ app.whenReady().then(async () => {
   historyDatabase = new HistoryDatabase(join(userData, "history.db"));
   diagnosticLog = new DiagnosticLog(join(userData, "diagnostics.jsonl"));
   settings = await settingsStore.load();
-  catalog = await CardCatalog.load(resolveCatalogPath());
+  const catalogPath = resolveCatalogPath();
+  if (!existsSync(catalogPath)) {
+    console.error(
+      "\n  ❌ 卡牌图鉴文件缺失！请先运行以下命令下载：\n" +
+      "     npm run catalog:download\n" +
+      "  或手动下载后放置到 assets/card-catalog.zhCN.json\n",
+    );
+    app.quit();
+    return;
+  }
+  catalog = await CardCatalog.load(catalogPath);
   catalog.setLanguage(settings.language);
   historyDatabase.setCardCatalogVersion(catalog.version);
 

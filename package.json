@@ -3,6 +3,15 @@
   "version": "0.1.0",
   "private": true,
   "description": "Read-only Hearthstone board analysis assistant for authorized testing.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/CuZaoo/hearthstone-agent-assistant.git"
+  },
+  "bugs": {
+    "url": "https://github.com/CuZaoo/hearthstone-agent-assistant/issues"
+  },
+  "homepage": "https://github.com/CuZaoo/hearthstone-agent-assistant#readme",
   "main": "dist/main/main/index.js",
   "type": "module",
   "scripts": {
@@ -14,6 +23,7 @@
     "build:renderer": "vite build",
     "build:main": "tsc -p tsconfig.main.json",
     "package": "npm run build && electron-builder --win nsis",
+    "catalog:download": "node scripts/download-card-catalog.mjs",
     "catalog:build": "node scripts/build-card-catalog.mjs",
     "catalog:import-hdt": "node scripts/import-hdt-carddefs.mjs",
     "catalog:validate": "node scripts/validate-card-catalog.mjs assets/card-catalog.zhCN.json",

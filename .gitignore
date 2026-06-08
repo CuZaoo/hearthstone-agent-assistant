@@ -3,6 +3,8 @@ dist/
 release/
 coverage/
 local-data/
+raw-data/
+assets/
 *.log
 *.db
 *.db-shm
