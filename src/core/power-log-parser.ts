@@ -126,10 +126,13 @@ export class PowerLogParser {
         debugPlayerName.trim(),
         Number(debugPlayerId),
       );
-      if (
+      const canSetSelf =
         !UNKNOWN_PLAYER_NAME.test(debugPlayerName.trim()) &&
-        !this.hasUnambiguousLocalAccountPlayer()
-      ) {
+        !this.hasUnambiguousLocalAccountPlayer() &&
+        this.state.selfPlayerId === undefined &&
+        this.state.localAccountPlayerIds.size <= 1;
+      console.log(`[DEBUG] DebugPrintGame: PlayerID=${debugPlayerId} Name="${debugPlayerName.trim()}" canSetSelf=${canSetSelf} localAcc=${this.state.localAccountPlayerIds.size} selfPlayerId=${this.state.selfPlayerId}`);
+      if (canSetSelf) {
         this.setSelfPlayerId(Number(debugPlayerId));
       }
       this.bumpRevision();
@@ -169,6 +172,42 @@ export class PowerLogParser {
     if (tag?.groups && tagName && tagValue) {
       const entityId = this.entityIdFromGroups(tag.groups);
       if (entityId === undefined) {
+      if (tagName === "CURRENT_PLAYER") {
+        if (Number(tagValue) === 1 && tag.groups.named) {
+          let playerId = this.state.playerIdByName.get(tag.groups.named);
+          const isPowerTaskList = line.includes("PowerTaskList.");
+          if (isPowerTaskList) {
+            console.log(`[DEBUG] PowerTaskList CURRENT_PLAYER=1 named="${tag.groups.named}" playerIdFromName=${playerId} activePlayerId=${this.state.activePlayerId} — skip flip`);
+          }
+          if (
+            playerId === undefined &&
+            this.state.activePlayerId !== undefined &&
+            !isPowerTaskList
+          ) {
+            const otherPlayerId = [...this.state.playerIds].find(
+              (id) => id !== this.state.activePlayerId,
+            );
+            if (otherPlayerId !== undefined) {
+              playerId = otherPlayerId;
+            }
+            console.log(`[DEBUG] CURRENT_PLAYER=1 fallback: named="${tag.groups.named}" activePlayerId=${this.state.activePlayerId} otherPlayerId=${otherPlayerId} inferredPlayerId=${playerId}`);
+          }
+          if (playerId !== undefined) {
+            this.state.activePlayerId = playerId;
+            this.state.activePlayer =
+              this.sideForPlayerId(playerId) ?? "unknown";
+            console.log(`[DEBUG] CURRENT_PLAYER=1 → activePlayerId=${playerId} activePlayer=${this.state.activePlayer} selfPlayerId=${this.state.selfPlayerId} opponentPlayerId=${this.state.opponentPlayerId}`);
+            this.onCurrentPlayer?.({
+              entityId: 0,
+              value: tagValue,
+              activePlayerId: playerId,
+              activePlayer: this.state.activePlayer,
+            });
+          }
+        } else if (Number(tagValue) === 0 && tag.groups.named) {
+          console.log(`[DEBUG] CURRENT_PLAYER=0 (fallback skip) named="${tag.groups.named}"`);
+        }
+      }
         return;
       }
       this.applyTag(entityId, tagName, tagValue, line);
@@ -250,13 +289,14 @@ export class PowerLogParser {
     } else if (tag === "CURRENT_PLAYER") {
       if (entityId === this.state.gameEntityId) {
         this.state.activePlayerId = Number(value);
-      } else {
+      } else if (Number(value) === 1) {
         this.state.activePlayerId = this.playerIdForEntity(entityId);
       }
       if (this.state.activePlayerId !== undefined) {
         this.state.activePlayer =
           this.sideForPlayerId(this.state.activePlayerId) ?? "unknown";
       }
+      console.log(`[DEBUG] applyTag CURRENT_PLAYER: entityId=${entityId} value=${value} activePlayerId=${this.state.activePlayerId} activePlayer=${this.state.activePlayer} selfPlayerId=${this.state.selfPlayerId}`);
       this.onCurrentPlayer?.({
         entityId,
         value: String(value),
@@ -307,14 +347,32 @@ export class PowerLogParser {
   }
 
   private setSelfPlayerId(playerId: number): void {
+    const wasUndefined = this.state.selfPlayerId === undefined;
+    console.log(`[DEBUG] setSelfPlayerId(${playerId}) wasUndefined=${wasUndefined} oldSelf=${this.state.selfPlayerId} oldOpponent=${this.state.opponentPlayerId} activePlayerId=${this.state.activePlayerId} activePlayer=${this.state.activePlayer}`);
     this.state.selfPlayerId = playerId;
     this.state.opponentPlayerId = [...this.state.playerIds].find(
       (id) => id !== playerId,
     );
     if (this.state.activePlayerId !== undefined) {
-      this.state.activePlayer =
+      const newActivePlayer =
         this.sideForPlayerId(this.state.activePlayerId) ?? "unknown";
+      if (wasUndefined && newActivePlayer !== this.state.activePlayer) {
+        this.state.activePlayer = newActivePlayer;
+        console.log(`[DEBUG] setSelfPlayerId re-firing onCurrentPlayer: newActivePlayer=${newActivePlayer}`);
+        this.onCurrentPlayer?.({
+          entityId: 0,
+          value: this.state.activePlayerId.toString(),
+          activePlayerId: this.state.activePlayerId,
+          activePlayer: newActivePlayer,
+        });
+      } else {
+        this.state.activePlayer = newActivePlayer;
+        if (wasUndefined) {
+          console.log(`[DEBUG] setSelfPlayerId no re-fire: newActivePlayer=${newActivePlayer} === oldActive=${this.state.activePlayer}`);
+        }
+      }
     }
+    console.log(`[DEBUG] setSelfPlayerId result: self=${this.state.selfPlayerId} opponent=${this.state.opponentPlayerId} activePlayer=${this.state.activePlayer}`);
   }
 
   private inferSelfFromAccountIds(): void {
@@ -322,6 +380,7 @@ export class PowerLogParser {
       return;
     }
     const [playerId] = this.state.localAccountPlayerIds;
+    console.log(`[DEBUG] inferSelfFromAccountIds: playerIds=${[...this.state.playerIds]} localPlayers=${[...this.state.localAccountPlayerIds]} inferredPlayer=${playerId}`);
     if (playerId !== undefined) {
       this.setSelfPlayerId(playerId);
     }
@@ -412,12 +471,13 @@ export class PowerLogParser {
       }
       const entity = this.getEntity(id);
       changed = this.mergeEntityDescription(entity, match[0]) || changed;
-      if (
+      const inferFromOptions =
         shouldInferSelfFromOptions(line) &&
         entity.controller !== undefined &&
         entity.cardId &&
-        !this.hasUnambiguousLocalAccountPlayer()
-      ) {
+        !this.hasUnambiguousLocalAccountPlayer();
+      if (inferFromOptions) {
+        console.log(`[DEBUG] DebugPrintOptions infer self: entity.id=${id} entity.controller=${entity.controller} entity.cardId=${entity.cardId}`);
         this.setSelfPlayerId(entity.controller);
         changed = true;
       }

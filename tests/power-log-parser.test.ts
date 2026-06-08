@@ -230,7 +230,10 @@ describe("PowerLogParser", () => {
       "D 12:00:00.004 GameState.DebugPrintGame() - PlayerID=2, PlayerName=一定要淡定#5470",
     );
     parser.consumeLine(
-      "D 12:00:00.005 GameState.DebugPrintPower() - FULL_ENTITY - Updating [entityName=古尔丹 id=74 zone=PLAY zonePos=0 cardId=HERO_07 player=1] CardID=HERO_07",
+      "D 12:00:00.005 GameState.DebugPrintOptions() -   option 1 type=POWER mainEntity=[entityName=测试卡牌 id=50 zone=HAND zonePos=1 cardId=TEST_001 player=2] error=NONE errorParam=",
+    );
+    parser.consumeLine(
+      "D 12:00:00.006 GameState.DebugPrintPower() - FULL_ENTITY - Updating [entityName=古尔丹 id=74 zone=PLAY zonePos=0 cardId=HERO_07 player=1] CardID=HERO_07",
     );
     parser.consumeLine(
       "D 12:00:00.006 GameState.DebugPrintPower() -         tag=CARDTYPE value=HERO",
@@ -345,5 +348,149 @@ describe("PowerLogParser", () => {
     expect(snapshot.opponent.hero.cardId).toBe("HERO_07");
     expect(snapshot.opponent.hero.name).toBe("古尔丹");
     expect(snapshot.opponent.hero.health).toBe(30);
+  });
+
+  it("falls back to playerIdByName for CURRENT_PLAYER on named entity when entity ID is unknown", () => {
+    const parser = new PowerLogParser();
+
+    parser.consumeLine(
+      "D 12:00:00.001 GameState.DebugPrintGame() - PlayerID=1, PlayerName=PlayerOne",
+    );
+    parser.consumeLine(
+      "D 12:00:00.002 GameState.DebugPrintPower() - TAG_CHANGE Entity=PlayerOne tag=CURRENT_PLAYER value=1",
+    );
+
+    expect(parser.snapshot("test-catalog").activePlayer).toBe("self");
+  });
+
+  it("ignores CURRENT_PLAYER=0 on player entities and only reacts to value=1", () => {
+    const parser = new PowerLogParser();
+
+    parser.consumeLine(
+      "D 12:00:00.001 GameState.DebugPrintPower() - Player EntityID=2 PlayerID=1 GameAccountId=[hi=1 lo=2]",
+    );
+    parser.consumeLine(
+      "D 12:00:00.002 GameState.DebugPrintPower() - Player EntityID=3 PlayerID=2 GameAccountId=[hi=0 lo=0]",
+    );
+    parser.consumeLine(
+      "D 12:00:00.003 GameState.DebugPrintGame() - PlayerID=1, PlayerName=PlayerOne",
+    );
+    parser.consumeLine(
+      "D 12:00:00.004 GameState.DebugPrintGame() - PlayerID=2, PlayerName=PlayerTwo",
+    );
+    parser.consumeLine(
+      "D 12:00:00.005 GameState.DebugPrintPower() - GameEntity EntityID=1",
+    );
+    parser.consumeLine(
+      "D 12:00:00.006 GameState.DebugPrintPower() - TAG_CHANGE Entity=GameEntity tag=CURRENT_PLAYER value=1",
+    );
+
+    expect(parser.snapshot("test-catalog").activePlayer).toBe("self");
+
+    parser.consumeLine(
+      "D 12:00:00.007 GameState.DebugPrintPower() - TAG_CHANGE Entity=PlayerOne tag=CURRENT_PLAYER value=0",
+    );
+
+    expect(parser.snapshot("test-catalog").activePlayer).toBe("self");
+
+    parser.consumeLine(
+      "D 12:00:00.008 GameState.DebugPrintPower() - TAG_CHANGE Entity=PlayerTwo tag=CURRENT_PLAYER value=1",
+    );
+
+    expect(parser.snapshot("test-catalog").activePlayer).toBe("opponent");
+  });
+
+  it("infers opponent CURRENT_PLAYER from known activePlayerId when opponent name is hidden", () => {
+    const parser = new PowerLogParser();
+
+    parser.consumeLine(
+      "D 12:00:00.001 GameState.DebugPrintPower() - Player EntityID=2 PlayerID=1 GameAccountId=[hi=1 lo=2]",
+    );
+    parser.consumeLine(
+      "D 12:00:00.002 GameState.DebugPrintPower() - Player EntityID=3 PlayerID=2 GameAccountId=[hi=1 lo=3]",
+    );
+    parser.consumeLine(
+      "D 12:00:00.003 GameState.DebugPrintGame() - PlayerID=1, PlayerName=PlayerOne#1234",
+    );
+    parser.consumeLine(
+      "D 12:00:00.004 GameState.DebugPrintGame() - PlayerID=2, PlayerName=UNKNOWN HUMAN PLAYER",
+    );
+    parser.consumeLine(
+      "D 12:00:00.005 GameState.DebugPrintOptions() -   option 1 type=POWER mainEntity=[entityName=测试卡牌 id=50 zone=HAND zonePos=1 cardId=TEST_001 player=1] error=NONE errorParam=",
+    );
+
+    parser.consumeLine(
+      "D 12:00:00.006 GameState.DebugPrintPower() - TAG_CHANGE Entity=3 tag=CURRENT_PLAYER value=1",
+    );
+    expect(parser.snapshot("test-catalog").activePlayer).toBe("opponent");
+
+    parser.consumeLine(
+      "D 12:00:00.007 GameState.DebugPrintPower() - TAG_CHANGE Entity=PlayerTwo#5678 tag=CURRENT_PLAYER value=0",
+    );
+    expect(parser.snapshot("test-catalog").activePlayer).toBe("opponent");
+
+    parser.consumeLine(
+      "D 12:00:00.008 GameState.DebugPrintPower() - TAG_CHANGE Entity=PlayerOne#1234 tag=CURRENT_PLAYER value=1",
+    );
+    expect(parser.snapshot("test-catalog").activePlayer).toBe("self");
+
+    parser.consumeLine(
+      "D 12:00:00.009 GameState.DebugPrintPower() - TAG_CHANGE Entity=PlayerOne#1234 tag=CURRENT_PLAYER value=0",
+    );
+    expect(parser.snapshot("test-catalog").activePlayer).toBe("self");
+
+    parser.consumeLine(
+      "D 12:00:00.010 GameState.DebugPrintPower() - TAG_CHANGE Entity=PlayerTwo#5678 tag=CURRENT_PLAYER value=1",
+    );
+    expect(parser.snapshot("test-catalog").activePlayer).toBe("opponent");
+  });
+
+  it("handles PvP where self player name is hidden as UNKNOWN HUMAN PLAYER", () => {
+    const parser = new PowerLogParser();
+
+    parser.consumeLine(
+      "D 12:00:00.001 GameState.DebugPrintPower() - Player EntityID=2 PlayerID=1 GameAccountId=[hi=144115211015832391 lo=1722555506]",
+    );
+    parser.consumeLine(
+      "D 12:00:00.002 GameState.DebugPrintPower() - Player EntityID=3 PlayerID=2 GameAccountId=[hi=144115211015832391 lo=132642487]",
+    );
+    parser.consumeLine(
+      "D 12:00:00.003 GameState.DebugPrintGame() - PlayerID=1, PlayerName=UNKNOWN HUMAN PLAYER",
+    );
+    parser.consumeLine(
+      "D 12:00:00.004 GameState.DebugPrintGame() - PlayerID=2, PlayerName=一定要淡定#5470",
+    );
+
+    // Initial CURRENT_PLAYER fires before DebugPrintOptions
+    // selfPlayerId is undefined at this point → activePlayer is "unknown"
+    parser.consumeLine(
+      "D 12:00:00.005 GameState.DebugPrintPower() - TAG_CHANGE Entity=3 tag=CURRENT_PLAYER value=1",
+    );
+    expect(parser.snapshot("test-catalog").activePlayer).toBe("unknown");
+
+    // DebugPrintOptions identifies local player as player 2
+    parser.consumeLine(
+      "D 12:00:00.006 GameState.DebugPrintOptions() -   option 1 type=POWER mainEntity=[entityName=月亮井 id=59 zone=HAND zonePos=1 cardId=EDR_476 player=2] error=NONE errorParam=",
+    );
+    // setSelfPlayerId re-fires onCurrentPlayer → should now be "self"
+    expect(parser.snapshot("test-catalog").activePlayer).toBe("self");
+
+    // Turn switches to opponent (hidden name)
+    parser.consumeLine(
+      "D 12:00:00.007 GameState.DebugPrintPower() - TAG_CHANGE Entity=一定要淡定#5470 tag=CURRENT_PLAYER value=0",
+    );
+    parser.consumeLine(
+      "D 12:00:00.008 GameState.DebugPrintPower() - TAG_CHANGE Entity=月华濯辉#5687 tag=CURRENT_PLAYER value=1",
+    );
+    expect(parser.snapshot("test-catalog").activePlayer).toBe("opponent");
+
+    // Turn switches back to self
+    parser.consumeLine(
+      "D 12:00:00.009 GameState.DebugPrintPower() - TAG_CHANGE Entity=月华濯辉#5687 tag=CURRENT_PLAYER value=0",
+    );
+    parser.consumeLine(
+      "D 12:00:00.010 GameState.DebugPrintPower() - TAG_CHANGE Entity=一定要淡定#5470 tag=CURRENT_PLAYER value=1",
+    );
+    expect(parser.snapshot("test-catalog").activePlayer).toBe("self");
   });
 });

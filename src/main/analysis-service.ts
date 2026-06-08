@@ -189,6 +189,7 @@ export class AnalysisService {
           format: selectedAgent.format,
           timeoutMs: selectedAgent.timeoutMs,
           winRateEstimationEnabled: this.deps.getSettings().winRateEstimationEnabled,
+          validationMode: this.deps.getSettings().validationMode,
         },
         selectedAgent.apiKey,
         this.deps.getCatalog(),

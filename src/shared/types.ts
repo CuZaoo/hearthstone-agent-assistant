@@ -3,6 +3,7 @@ export type ActivePlayer = PlayerSide | "unknown";
 export type GameMode = "standard" | "unsupported" | "unknown";
 export type Transport = "responses" | "chat-completions";
 export type ApiFormat = "responses" | "chat-completions";
+export type ValidationMode = "strict" | "relaxed";
 
 export interface CardReference {
   entityId: number;
@@ -166,6 +167,7 @@ export interface AppSettings {
   multiAgentCompareEnabled: boolean;
   winRateEstimationEnabled: boolean;
   hotkeys: HotkeyConfig;
+  validationMode: ValidationMode;
 }
 
 export interface HotkeyConfig {

@@ -7,12 +7,36 @@ export function salvageValidCandidates(
   snapshot: GameStateSnapshot,
   catalog: CardCatalog,
   maxCandidates: number,
+  skipValidation = false,
 ): AnalysisResult | undefined {
   if (
     result.snapshotRevision !== snapshot.revision ||
     result.candidates.length === 0
   ) {
     return undefined;
+  }
+
+  if (skipValidation) {
+    const keptCandidates = result.candidates
+      .slice(0, maxCandidates)
+      .map((candidate, index) => ({
+        ...candidate,
+        rank: index + 1,
+      }));
+    if (result.candidates.length > keptCandidates.length) {
+      return {
+        ...result,
+        candidates: keptCandidates,
+        warnings: [
+          ...result.warnings,
+          `Agent 返回路线超过上限，已只保留前 ${maxCandidates} 条可用路线。`,
+        ],
+      };
+    }
+    return {
+      ...result,
+      candidates: keptCandidates,
+    };
   }
 
   const reports = result.candidates.map((candidate) => ({

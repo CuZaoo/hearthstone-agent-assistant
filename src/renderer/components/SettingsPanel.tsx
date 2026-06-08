@@ -224,6 +224,17 @@ export function SettingsPanel({
                 <option value="enUS">English</option>
               </select>
             </div>
+            <div className="toggle-row">
+              <span className="toggle-label">
+                {settings.validationMode === "strict" ? "严格模式" : "宽松模式"}
+                <span style={{fontSize:10,color:"var(--text-muted)",marginLeft:4}}>
+                  {settings.validationMode === "strict" ? "" : "· 跳过 AI 结果校验"}
+                </span>
+              </span>
+              <div className={`toggle${settings.validationMode === "strict" ? " on" : ""}`} onClick={() => {
+                handleUpdateSettings({ ...settings, validationMode: settings.validationMode === "strict" ? "relaxed" : "strict" });
+              }} />
+            </div>
           </div>
 
           <div className="settings-group">

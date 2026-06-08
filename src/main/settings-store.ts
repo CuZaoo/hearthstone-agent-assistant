@@ -98,6 +98,7 @@ function normalizeSettings(settings: Partial<AppSettings>): AppSettings {
         DEFAULT_SETTINGS.hotkeys.toggleOverlay,
       ),
     },
+    validationMode: settings.validationMode === "strict" ? "strict" : "relaxed",
   };
 }
 

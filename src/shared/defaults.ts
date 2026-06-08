@@ -107,6 +107,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
     analyze: "CommandOrControl+Shift+A",
     toggleOverlay: "CommandOrControl+Shift+O",
   },
+  validationMode: "relaxed",
 };
 
 export function emptyPlayerState(): PlayerState {

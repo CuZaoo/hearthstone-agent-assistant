@@ -138,6 +138,7 @@ export class AgentAnalysisRunner {
         format: agent.format,
         timeoutMs,
         winRateEstimationEnabled: settings.winRateEstimationEnabled,
+        validationMode: settings.validationMode,
         promptConfig: agent.promptConfig,
       },
       apiKey,

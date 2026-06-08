@@ -37,7 +37,7 @@ export class AgentClient {
   constructor(
     private readonly settings: Pick<
       AppSettings,
-      "apiUrl" | "model" | "format" | "timeoutMs" | "winRateEstimationEnabled"
+      "apiUrl" | "model" | "format" | "timeoutMs" | "winRateEstimationEnabled" | "validationMode"
     > & { promptConfig?: PromptConfig },
     private readonly apiKey: string,
     private readonly catalog: CardCatalog,
@@ -129,6 +129,7 @@ export class AgentClient {
         request.snapshot,
         this.catalog,
         request.maxCandidates,
+        this.settings.validationMode === "relaxed",
       );
       if (salvaged) {
         return {
@@ -138,7 +139,7 @@ export class AgentClient {
       }
 
       if (attempt === 0) {
-        repairErrors = collectCandidateErrors(result, request.snapshot, this.catalog);
+        repairErrors = collectCandidateErrors(result, request.snapshot, this.catalog, this.settings.validationMode);
         if (result.candidates.length > request.maxCandidates) {
           repairErrors.push(`返回了 ${result.candidates.length} 条路线，超过上限 ${request.maxCandidates}。`);
         }
@@ -149,7 +150,7 @@ export class AgentClient {
         continue;
       }
 
-      const finalErrors = collectCandidateErrors(result, request.snapshot, this.catalog);
+      const finalErrors = collectCandidateErrors(result, request.snapshot, this.catalog, this.settings.validationMode);
       if (result.candidates.length > request.maxCandidates) {
         finalErrors.push(`返回了 ${result.candidates.length} 条路线，超过上限 ${request.maxCandidates}。`);
       }
@@ -301,7 +302,9 @@ function collectCandidateErrors(
   result: AnalysisResult,
   snapshot: AnalysisRequest["snapshot"],
   catalog: CardCatalog,
+  validationMode: "strict" | "relaxed" = "strict",
 ): string[] {
+  if (validationMode === "relaxed") return [];
   return result.candidates.flatMap((candidate) => {
     const report = validateCandidateLine(candidate, snapshot, catalog);
     return report.errors;
